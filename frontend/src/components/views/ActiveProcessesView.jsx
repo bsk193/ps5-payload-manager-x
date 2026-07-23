@@ -67,8 +67,9 @@ const ActiveProcessesView = ({ ip, addToast, showConfirm }) => {
           const res = await fetch(`/process_kill?pid=${proc.pid}`)
           const data = await res.json()
           if (res.ok) {
+            setProcesses(prev => prev.filter(p => p.pid !== proc.pid));
             addToast(t("active_processes.kill_success", "Successfully killed {{name}}", { name: proc.name }))
-            fetchProcesses()
+            setTimeout(() => fetchProcesses(), 1000);
           } else {
             addToast(data.error || t("active_processes.kill_failed", "Failed to kill {{name}}", { name: proc.name }), "error")
           }

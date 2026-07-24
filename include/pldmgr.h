@@ -1,7 +1,31 @@
 #pragma once
 
+/* ── Build identity ────────────────────────────────────────────
+ * Define PLDMGRX (e.g. `make ... PLDMGRX=1`, which passes -DPLDMGRX) to build
+ * "Payload Manager X": a second instance that can be installed and run next to
+ * a stock Payload Manager without colliding. It uses a different HTTP port,
+ * home-screen app id/name, and data directory (/data/pldmgrx), so the two never
+ * share config, profiles, or the autoload scratch file.
+ * Without the flag, the build is identical to stock. */
+#ifdef PLDMGRX
+  /* Port is chosen at build time (make ... PLDMGRX_PORT=8084|8184). 8084 makes a
+   * drop-in replacement for the official manager; 8184 runs alongside it. */
+  #ifdef MENU_PORT_OVERRIDE
+    #define MENU_PORT MENU_PORT_OVERRIDE
+  #else
+    #define MENU_PORT 8084
+  #endif
+  #define PLDMGR_DATA_ROOT "/data/pldmgrx"
+  #define PLDMGR_TITLE_ID  "PLDMGRX01"
+  #define PLDMGR_APP_NAME  "Payload Manager X"
+#else
+  #define MENU_PORT        8084
+  #define PLDMGR_DATA_ROOT "/data/pldmgr"
+  #define PLDMGR_TITLE_ID  "PLDM00001"
+  #define PLDMGR_APP_NAME  "Payload Manager"
+#endif
+
 /* Network Settings */
-#define MENU_PORT 8084
 #define ELFLDR_PORT 9021
 
 /* Routes */
@@ -21,6 +45,9 @@
 #define ROUTE_ABORT "/abort"
 #define ROUTE_AUTOLOAD_STATUS "/autoload_status"
 #define ROUTE_AUTOLOAD_CLEAR "/autoload_clear"
+#define ROUTE_PROFILES_GET "/profiles_get"
+#define ROUTE_PROFILES_SET "/profiles_set"
+#define ROUTE_PROFILE_RUN "/profile_run"
 #define ROUTE_REPO_LIST "/repository_payloads"
 #define ROUTE_REPO_REFRESH "/repository_refresh"
 #define ROUTE_REPO_INSTALL "/repository_install"
@@ -39,10 +66,11 @@
 #define ROUTE_HISTORY_LIST "/history_list"
 
 #define MENU_VERSION "0.5.0"
-#define AUTOLOAD_CONFIG_PATH "/data/pldmgr/autoload.txt"
-#define PLDMGR_CONFIG_PATH "/data/pldmgr/pldmgr_config.txt"
-#define REPOSITORY_CACHE_PATH "/data/pldmgr/repository_cache.json"
-#define PAYLOADS_STORAGE_DIR "/data/pldmgr/payloads"
+#define AUTOLOAD_CONFIG_PATH PLDMGR_DATA_ROOT "/autoload.txt"
+#define PROFILES_CONFIG_PATH PLDMGR_DATA_ROOT "/profiles.json"
+#define PLDMGR_CONFIG_PATH PLDMGR_DATA_ROOT "/pldmgr_config.txt"
+#define REPOSITORY_CACHE_PATH PLDMGR_DATA_ROOT "/repository_cache.json"
+#define PAYLOADS_STORAGE_DIR PLDMGR_DATA_ROOT "/payloads"
 #define REPOSITORY_SOURCE_URL                                                  \
   "https://itsplk.github.io/ps5-payloads-mirror/payloads.json"
 #define REPOSITORY_REFRESH_INTERVAL_SEC 86400
@@ -56,13 +84,14 @@ int pldmgr_server_is_active();
 #include "utils.h"
 
 /* Paths */
-#define BASE_DATA_DIR "/data/pldmgr"
-#define SOURCES_CONFIG_PATH "/data/pldmgr/sources.json"
+#define BASE_DATA_DIR PLDMGR_DATA_ROOT
+#define SOURCES_CONFIG_PATH PLDMGR_DATA_ROOT "/sources.json"
 #define MAX_SOURCES 50
 
-/* Scan Locations (Internal + 8 USB ports) */
+/* Scan Locations (Internal + 8 USB ports).
+ * The internal dir follows the build's data root; USB payload dirs are shared. */
 static const char *SCAN_DIRS[] = {
-    "/data/pldmgr",     "/mnt/usb0/pldmgr", "/mnt/usb1/pldmgr",
+    PLDMGR_DATA_ROOT,   "/mnt/usb0/pldmgr", "/mnt/usb1/pldmgr",
     "/mnt/usb2/pldmgr", "/mnt/usb3/pldmgr", "/mnt/usb4/pldmgr",
     "/mnt/usb5/pldmgr", "/mnt/usb6/pldmgr", "/mnt/usb7/pldmgr"};
 #define SCAN_DIRS_COUNT 9

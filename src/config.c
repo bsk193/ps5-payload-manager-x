@@ -212,38 +212,10 @@ int config_handle_set_json(const char *json_data) {
             pldmgr_autoload_abort();
     }
 
-    /* Handle AUTOLOAD_LIST if present */
-    char *list_start = strstr(json_data, "\"AUTOLOAD_LIST\"");
-    if (list_start) {
-        char *val = strchr(list_start, ':');
-        if (val) {
-            val++;
-            while (*val == ' ' || *val == '\"')
-                val++;
-
-            char *list_end = strchr(val, '\"');
-            size_t list_len = list_end ? (size_t)(list_end - val) : 0;
-            char *list_val = malloc(list_len + 1);
-            if (list_val) {
-                memcpy(list_val, val, list_len);
-                list_val[list_len] = '\0';
-
-                mkdir(BASE_DATA_DIR, 0777);
-                FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "w");
-                if (f) {
-                    char *token = strtok(list_val, ",");
-                    while (token) {
-                        fprintf(f, "%s\n", token);
-                        token = strtok(NULL, ",");
-                    }
-                    fclose(f);
-                    pldmgr_log("[PLDMGR] Saved autoload list to %s\n",
-                               AUTOLOAD_CONFIG_PATH);
-                }
-                free(list_val);
-            }
-        }
-    }
+    /* NOTE: The autoload sequence is no longer stored via AUTOLOAD_LIST here.
+     * Sequences now live inside profiles (profiles.json, managed via
+     * /profiles_set); autoload.txt is an internal scratch file the worker
+     * resolves from the enabled/selected profile. */
 
     return 0;
 }

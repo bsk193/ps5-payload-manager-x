@@ -33,6 +33,7 @@ import AutoloadView from './components/views/AutoloadView'
 import SettingsView from './components/views/SettingsView'
 import DonateView from './components/views/DonateView'
 import AutoloadOverlay from './components/views/AutoloadOverlay'
+import ProfilePickerOverlay from './components/views/ProfilePickerOverlay'
 import MoveFromUsbView from './components/views/MoveFromUsbView'
 import LogViewer from './components/views/LogViewer'
 import ManageSourcesView from './components/views/ManageSourcesView'
@@ -60,9 +61,11 @@ function App() {
     localStorage.setItem('sidebarExpanded', JSON.stringify(sidebarExpanded))
   }, [sidebarExpanded])
   const [autoloadStatus, setAutoloadStatus] = useState(null)
+  const [pickerDismissed, setPickerDismissed] = useState(false)
   const [logs, setLogs] = useState([])
   const [payloads, setPayloads] = useState([])
   const [config, setConfig] = useState({})
+  const [profiles, setProfiles] = useState([])
   const [ip, setIp] = useState('0.0.0.0')
   const [version, setVersion] = useState('Loading...')
   const [loading, setLoading] = useState(false)
@@ -188,6 +191,44 @@ function App() {
     if (data) setConfig(data)
   }
 
+  // Profiles are stored with `list` as a string ("a,!1000,b") on the wire;
+  // in-app we keep `list` as an array for easier editing.
+  const refreshProfiles = async () => {
+    const data = await api('/profiles_get')
+    if (data?.profiles) {
+      setProfiles(data.profiles.map(p => ({
+        id: p.id,
+        name: p.name,
+        enabled: p.enabled === true || p.enabled === 'true',
+        list: typeof p.list === 'string' ? p.list.split(',').filter(Boolean) : (Array.isArray(p.list) ? p.list : [])
+      })))
+    }
+  }
+
+  const saveProfiles = async (newProfiles) => {
+    const payload = {
+      profiles: newProfiles.map(p => ({
+        id: p.id,
+        name: p.name,
+        enabled: !!p.enabled,
+        list: p.list.join(',')
+      }))
+    }
+    const success = await api('/profiles_set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    if (success) {
+      // Keep App's copy in sync (used by the startup picker) without a re-fetch
+      // that could clobber in-flight edits.
+      setProfiles(newProfiles.map(p => ({ ...p, list: [...p.list] })))
+      return true
+    }
+    addToast(t("app.toasts.save_failed", "Save failed"), "error")
+    return false
+  }
+
   const handleAbort = async () => {
     await fetch('/abort').catch(() => { })
     setAutoloadStatus(prev => prev ? { ...prev, remaining: -1 } : null)
@@ -198,6 +239,28 @@ function App() {
     await fetch('/autoload_clear').catch(() => { })
     setAutoloadStatus(null)
     window.location.reload()
+  }
+
+  const handleRunProfile = async (id) => {
+    // Optimistically leave the picker; the executing overlay takes over as soon
+    // as the next status poll reports the running sequence.
+    setPickerDismissed(true)
+    try {
+      const res = await fetch(`/profile_run?id=${encodeURIComponent(id)}`)
+      if (!res.ok) throw new Error('run failed')
+      // Kick an immediate status refresh so the overlay appears without waiting.
+      const data = await api('/autoload_status')
+      if (data) setAutoloadStatus(data)
+    } catch (e) {
+      setPickerDismissed(false)
+      addToast(t("app.toasts.launch_failed", "Launch failed"), "error")
+    }
+  }
+
+  const handleSkipPicker = async () => {
+    setPickerDismissed(true)
+    await fetch('/autoload_clear').catch(() => { })
+    setAutoloadStatus(prev => prev ? { ...prev, picker: false } : prev)
   }
 
   const loadPayload = async (path) => {
@@ -361,6 +424,7 @@ function App() {
       } else {
         refreshPayloads()
         refreshConfig()
+        refreshProfiles()
         refreshHistory()
       }
     }
@@ -375,6 +439,9 @@ function App() {
       refreshConfig()
       refreshPayloads()
     }
+    if (view === 'autoload') {
+      refreshProfiles()
+    }
   }, [view])
 
   useEffect(() => {
@@ -386,9 +453,10 @@ function App() {
           const data = await res.json()
           setAutoloadStatus(data)
 
-          // Poll as long as autoload is active (remaining >= 0), including DONE state
-          // Only stop when remaining goes negative (after /autoload_clear is called)
-          const isActive = data && data.remaining >= 0
+          // Poll as long as autoload is active (remaining >= 0, including DONE),
+          // or while the startup picker is showing (so we catch the transition
+          // into the running sequence quickly once a profile is selected).
+          const isActive = data && (data.remaining >= 0 || data.picker)
           if (isActive) {
             const delay = data.remaining > 0 ? 600 : 500
             statusTimeout = setTimeout(poll, delay)
@@ -423,6 +491,12 @@ function App() {
 
   if (isAutoloadActive) {
     return <AutoloadOverlay status={autoloadStatus} onCancel={handleAbort} onFinish={handleFinish} isPS5={isPS5} />;
+  }
+
+  // Startup picker: profiles exist but none is enabled, and nothing is running.
+  const showPicker = autoloadStatus && autoloadStatus.picker && !pickerDismissed && profiles.length > 0;
+  if (showPicker) {
+    return <ProfilePickerOverlay profiles={profiles} onRun={handleRunProfile} onSkip={handleSkipPicker} isPS5={isPS5} />;
   }
 
   return (
@@ -677,8 +751,8 @@ function App() {
           {view === 'autoload' && (
             <AutoloadView
               payloads={payloads}
-              config={config}
-              onSaveConfig={handleSaveConfig}
+              profiles={profiles}
+              onSaveProfiles={saveProfiles}
               onToast={addToast}
               onRedirect={(v, target) => {
                 if (target) setStorageScrollTarget(target)

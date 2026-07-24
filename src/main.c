@@ -142,7 +142,7 @@ int main(int argc, char *argv[]) {
 
     if (NULL == daemon) {
         pldmgr_log("[PLDMGR] Failed to start HTTP daemon!\n");
-        pldmgr_notify("Error: HTTP Server Failed\nPort 8084 may be busy");
+        pldmgr_notify("Error: HTTP Server Failed\nPort %d may be busy", MENU_PORT);
         return 1;
     }
 
@@ -157,10 +157,10 @@ int main(int argc, char *argv[]) {
 
     if (!cfg.auto_browser_open) {
         if (strcmp(current_ip, "unknown") != 0) {
-            pldmgr_notify("Payload Manager v%s\nIP: %s\nPort: %d", MENU_VERSION,
+            pldmgr_notify(PLDMGR_APP_NAME " v%s\nIP: %s\nPort: %d", MENU_VERSION,
                           current_ip, port);
         } else {
-            pldmgr_notify("Payload Manager v%s\nWaiting for Network...", MENU_VERSION);
+            pldmgr_notify(PLDMGR_APP_NAME " v%s\nWaiting for Network...", MENU_VERSION);
         }
     }
 

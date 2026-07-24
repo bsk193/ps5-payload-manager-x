@@ -1,0 +1,56 @@
+name: Build ELF (artifacts)
+
+# Builds the payload manager in the cloud (GitHub's Linux runners provide the
+# Docker/SDK environment) and uploads the compiled ELFs as downloadable
+# artifacts. No release is created and nothing is published — grab the .elf from
+# the run's "Artifacts" section and send it to your PS5.
+#
+# Both binaries are the SAME "Payload Manager X" app (name "Payload Manager X",
+# home-screen id PLDMGRX01, data dir /data/pldmgrx). They differ only by port:
+#   - pldmgrx_8084.elf : port 8084  -> drop-in REPLACEMENT for the official
+#                        Payload Manager (takes its port; existing autoloader
+#                        entries / bookmarks pointing at :8084 keep working).
+#   - pldmgrx_8184.elf : port 8184  -> runs ALONGSIDE the official manager
+#                        (official stays on :8084) for side-by-side testing.
+#
+# Manual only: trigger from the Actions tab with "Run workflow". Use this for
+# side-by-side testing. Tagged releases are handled separately by release.yml.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build frontend
+        run: make frontend-build
+
+      - name: Build PS5 SDK Docker image
+        run: docker build -t ps5-payload-sdk -f Dockerfile.sdk .
+
+      - name: Build Payload Manager X — replacement (port 8084)
+        run: docker run --rm -v "$(pwd)":/src -w /src ps5-payload-sdk make clean all PLDMGRX=1 PLDMGRX_PORT=8084
+
+      - name: Build Payload Manager X — alongside (port 8184)
+        run: docker run --rm -v "$(pwd)":/src -w /src ps5-payload-sdk make clean all PLDMGRX=1 PLDMGRX_PORT=8184
+
+      - name: Upload ELFs
+        uses: actions/upload-artifact@v4
+        with:
+          name: payload-manager-x
+          path: |
+            pldmgrx_8084.elf
+            pldmgrx_8184.elf
+          if-no-files-found: error

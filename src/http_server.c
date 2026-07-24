@@ -20,6 +20,7 @@
 #include "repository.h"
 #include "sha256.h"
 #include "sources.h"
+#include "profiles.h"
 #include "history_mgr.h"
 #include "process_mgr.h"
 #include "ps5_launcher.h"
@@ -216,6 +217,15 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
             return MHD_YES;
         }
 
+        if (strcmp(url, ROUTE_PROFILES_SET) == 0 && strcmp(method, "POST") == 0) {
+            struct PostStatus *status = malloc(sizeof(struct PostStatus));
+            status->data = NULL;
+            status->size = 0;
+            status->error = 0;
+            *con_cls = status;
+            return MHD_YES;
+        }
+
         if (strncmp(url, ROUTE_REPO_INSTALL_PUSH,
                     strlen(ROUTE_REPO_INSTALL_PUSH)) == 0 &&
             strcmp(method, "POST") == 0) {
@@ -378,6 +388,41 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
                 conn, ok == 0 ? MHD_HTTP_OK : MHD_HTTP_INTERNAL_SERVER_ERROR, resp_ss);
             MHD_destroy_response(resp_ss);
             return ret_ss;
+        }
+    }
+
+    /* ── Handle POST data for /profiles_set ────────────────── */
+    if (strcmp(url, ROUTE_PROFILES_SET) == 0 && strcmp(method, "POST") == 0) {
+        struct PostStatus *status = (struct PostStatus *)*con_cls;
+        if (*upload_data_size != 0) {
+            char *nd = realloc(status->data, status->size + *upload_data_size + 1);
+            if (!nd) {
+                status->error = 1;
+            } else {
+                status->data = nd;
+                memcpy(status->data + status->size, upload_data, *upload_data_size);
+                status->size += *upload_data_size;
+                status->data[status->size] = '\0';
+            }
+            *upload_data_size = 0;
+            return MHD_YES;
+        } else {
+            int ok = -1;
+            if (status->data && !status->error)
+                ok = profiles_save_raw(status->data, status->size);
+            if (status->data)
+                free(status->data);
+            free(status);
+            *con_cls = NULL;
+
+            const char *msg = ok == 0 ? MSG_OK : "Failed to save profiles";
+            struct MHD_Response *resp_ps = MHD_create_response_from_buffer(
+                strlen(msg), (void *)msg, MHD_RESPMEM_MUST_COPY);
+            add_cors_headers(resp_ps);
+            enum MHD_Result ret_ps = MHD_queue_response(
+                conn, ok == 0 ? MHD_HTTP_OK : MHD_HTTP_INTERNAL_SERVER_ERROR, resp_ps);
+            MHD_destroy_response(resp_ps);
+            return ret_ps;
         }
     }
 
@@ -729,6 +774,24 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
         sources_list_json(resp_buf, RESPONSE_BUFFER_SIZE);
         resp = MHD_create_response_from_buffer(strlen(resp_buf), (void *)resp_buf, MHD_RESPMEM_MUST_FREE);
         MHD_add_response_header(resp, "Content-Type", "application/json");
+    } else if (strcmp(url, ROUTE_PROFILES_GET) == 0) {
+        char *resp_buf;
+        struct MHD_Response *oom_resp = alloc_response_buffer(&resp_buf);
+        if (oom_resp)
+            return MHD_queue_response(conn, MHD_HTTP_INTERNAL_SERVER_ERROR, oom_resp);
+        profiles_list_json(resp_buf, RESPONSE_BUFFER_SIZE);
+        resp = MHD_create_response_from_buffer(strlen(resp_buf), (void *)resp_buf, MHD_RESPMEM_MUST_FREE);
+        MHD_add_response_header(resp, "Content-Type", "application/json");
+    } else if (strcmp(url, ROUTE_PROFILE_RUN) == 0) {
+        const char *id = MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "id");
+        int rc = pldmgr_autoload_run_profile(id);
+        char json_resp[256];
+        snprintf(json_resp, sizeof(json_resp),
+                 "{\"ok\":%s}", rc == 0 ? "true" : "false");
+        resp = MHD_create_response_from_buffer(strlen(json_resp), (void *)json_resp, MHD_RESPMEM_MUST_COPY);
+        MHD_add_response_header(resp, "Content-Type", "application/json");
+        add_cors_headers(resp);
+        return MHD_queue_response(conn, rc == 0 ? MHD_HTTP_OK : MHD_HTTP_BAD_REQUEST, resp);
     } else if (strcmp(url, ROUTE_SOURCES_ADD) == 0) {
         const char *src_url = MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "url");
         if (!src_url || !src_url[0]) {
@@ -898,8 +961,9 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
         if (!resp) {
             snprintf(resp_buf, RESPONSE_BUFFER_SIZE,
                      "{\"remaining\":%d,\"remaining_ms\":%lld,\"total\":%d,\"done\":%d,\"current\":\"%s\","
-                     "\"list\":\"%s\",\"delay\":%d,\"KILL_DISC_PLAYER_ON_STARTUP\":%s,\"SCAN_USB_PAYLOADS\":%s}",
+                     "\"list\":\"%s\",\"delay\":%d,\"picker\":%s,\"KILL_DISC_PLAYER_ON_STARTUP\":%s,\"SCAN_USB_PAYLOADS\":%s}",
                      remaining, remaining_ms, total, done, current_escaped, list_escaped, cfg.autoload_delay,
+                     pldmgr_autoload_is_picker() ? "true" : "false",
                      cfg.kill_disc_player ? "true" : "false", cfg.scan_usb_payloads ? "true" : "false");
             resp = MHD_create_response_from_buffer(strlen(resp_buf),
                                                    (void *)resp_buf,

@@ -34,6 +34,9 @@ export default defineConfig({
       '/manage:': { target: 'http://127.0.0.1:8081', changeOrigin: true },
       '/abort': { target: 'http://127.0.0.1:8081', changeOrigin: true },
       '/autoload_clear': { target: 'http://127.0.0.1:8081', changeOrigin: true },
+      '/profiles_get': { target: 'http://127.0.0.1:8081', changeOrigin: true },
+      '/profiles_set': { target: 'http://127.0.0.1:8081', changeOrigin: true },
+      '/profile_run': { target: 'http://127.0.0.1:8081', changeOrigin: true },
       '/events': {
         target: 'http://127.0.0.1:8081',
         changeOrigin: true,

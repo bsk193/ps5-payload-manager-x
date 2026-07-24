@@ -21,7 +21,7 @@ LIBS     := $(TARGET)/lib/libcurl.a \
 # Source Files
 SRCS := src/main.c src/http_server.c src/config.c src/log_server.c \
         src/sha256.c src/json_helpers.c src/repository.c src/sources.c \
-        src/payload_mgr.c src/process_mgr.c \
+        src/profiles.c src/payload_mgr.c src/process_mgr.c \
         src/ps5_launcher.c src/notification.c src/utils.c src/autoload.c \
         src/app_installer.c src/history_mgr.c
 OBJS := $(SRCS:.c=.o)
@@ -43,7 +43,25 @@ ICON_PNG_HEADER := include/assets_icon_png.h
 CFLAGS := -Os -Wall -ffunction-sections -fdata-sections $(INCLUDES)
 LDFLAGS := -Wl,--gc-sections
 
+# "Payload Manager X" build: `make ... PLDMGRX=1 [PLDMGRX_PORT=8084|8184]`.
+# Always uses the X identity (name "Payload Manager X", app id PLDMGRX01,
+# /data/pldmgrx) — the only thing that varies is the HTTP port:
+#   PLDMGRX_PORT=8084 -> pldmgrx_8084.elf : drop-in replacement for official
+#   PLDMGRX_PORT=8184 -> pldmgrx_8184.elf : runs alongside the official manager
+PLDMGRX_PORT ?= 8084
+PARAM_X :=
+ifdef PLDMGRX
+CFLAGS += -DPLDMGRX -DMENU_PORT_OVERRIDE=$(PLDMGRX_PORT)
+ELF := pldmgrx_$(PLDMGRX_PORT).elf
+PARAM_X := assets/param_x.json
+endif
+
 all: $(ELF)
+
+# Generate the X app metadata with the chosen port baked into its deeplink.
+assets/param_x.json: assets/param_x.json.in
+	@echo "Generating $@ for port $(PLDMGRX_PORT)..."
+	sed 's/__PORT__/$(PLDMGRX_PORT)/g' $< > $@
 
 # Build the React frontend
 .PHONY: frontend-build
@@ -94,14 +112,14 @@ $(FRONTEND_DIST):
 	@echo "Please run 'make frontend-build' locally on your host machine first."
 	@exit 1
 
-$(ELF): $(ASSET_HEADER) $(MANIFEST_HEADER) $(CA_HEADER) $(FAVICON_SVG_HEADER) $(ICON_PNG_HEADER) $(SRCS)
+$(ELF): $(ASSET_HEADER) $(MANIFEST_HEADER) $(CA_HEADER) $(FAVICON_SVG_HEADER) $(ICON_PNG_HEADER) $(PARAM_X) $(SRCS)
 	@echo "Building $(ELF)..."
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $(ELF) $(SRCS) $(LIBS)
 	@echo "Stripping $(ELF)..."
 	$(STRIP) $(ELF)
 
 clean:
-	rm -f $(ELF) $(ASSET_HEADER) $(MANIFEST_HEADER) $(CA_HEADER) $(FAVICON_SVG_HEADER) $(ICON_PNG_HEADER) src/*.o
+	rm -f $(ELF) $(ASSET_HEADER) $(MANIFEST_HEADER) $(CA_HEADER) $(FAVICON_SVG_HEADER) $(ICON_PNG_HEADER) assets/param_x.json src/*.o
 
 
 

@@ -28,3 +28,7 @@ lib/
 include/curl/
 include/openssl/
 pldmgr.elf.zip
+.gstack/
+
+# Generated at build time from assets/param_x.json.in
+assets/param_x.json

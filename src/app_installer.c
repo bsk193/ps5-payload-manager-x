@@ -27,7 +27,11 @@
   extern const uint8_t name[];                                                 \
   extern const size_t name##_size;
 
+#ifdef PLDMGRX
+INCASSET(param_json, "assets/param_x.json");
+#else
 INCASSET(param_json, "assets/param.json");
+#endif
 INCASSET(icon0_png, "assets/icon0.png");
 
 int sceAppInstUtilInitialize(void);
@@ -98,7 +102,7 @@ static int needs_update(const char *path, const uint8_t *expected_data,
 }
 
 int pldmgr_install_app_if_needed(void) {
-  const char *title_id = "PLDM00001";
+  const char *title_id = PLDMGR_TITLE_ID;
   char base_dir[256];
   char param_path[256];
   char icon_path[256];

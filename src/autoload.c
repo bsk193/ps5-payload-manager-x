@@ -19,6 +19,7 @@ long long get_current_time_ms() {
 #include "autoload.h"
 #include "payload_mgr.h"
 #include "ps5_launcher.h"
+#include "profiles.h"
 
 static volatile int abort_flag = 0;
 static volatile int remaining_seconds = -1;
@@ -29,6 +30,19 @@ static char autoload_current_name[128] = "";
 static int autoload_total_count = 0;
 static int autoload_done_count = 0;
 static int autoload_triggered = 0; // Starts at 0, becomes 1 when frontend connects
+
+/* Picker mode: booted with profiles present but none enabled. The worker sets
+ * this and returns without running; the frontend shows a selection screen. */
+static volatile int picker_active = 0;
+
+/* When forced != 0 the worker runs the already-resolved sequence immediately
+ * (no startup countdown), bypassing the enabled/picker gating. Set by
+ * pldmgr_autoload_run_profile() before starting the worker thread. */
+static volatile int forced_run = 0;
+
+int pldmgr_autoload_is_picker() {
+    return picker_active;
+}
 
 int pldmgr_autoload_get_remaining_seconds() {
     return remaining_seconds;
@@ -50,9 +64,7 @@ void pldmgr_autoload_get_status(int *total, int *done, char *current) {
 
 void* pldmgr_autoload_worker(void* arg) {
     struct stat st;
-    int has_config = (stat(AUTOLOAD_CONFIG_PATH, &st) == 0);
-    
-    int enabled = 0;
+
     int browser_open = 1;
     int auto_delay = 5;
 
@@ -60,9 +72,7 @@ void* pldmgr_autoload_worker(void* arg) {
     if (ef) {
         char line[128];
         while (fgets(line, sizeof(line), ef)) {
-            if (strncmp(line, "AUTOLOAD_ENABLED=", 17) == 0) {
-                enabled = atoi(line + 17);
-            } else if (strncmp(line, "AUTO_BROWSER_OPEN=", 18) == 0) {
+            if (strncmp(line, "AUTO_BROWSER_OPEN=", 18) == 0) {
                 browser_open = atoi(line + 18);
             } else if (strncmp(line, "AUTOLOAD_DELAY=", 15) == 0) {
                 auto_delay = atoi(line + 15);
@@ -71,85 +81,124 @@ void* pldmgr_autoload_worker(void* arg) {
         fclose(ef);
     }
 
-    if (!enabled || !has_config) return NULL;
+    int forced = forced_run;
 
-    remaining_seconds = auto_delay;
+    if (!forced) {
+        /* Boot: decide what to run based on the profiles configuration. */
+        ProfileEntry *arr = calloc(MAX_PROFILES, sizeof(ProfileEntry));
+        if (!arr) return NULL;
+        int count = 0;
+        profiles_load(arr, &count);
+        int active = profiles_active_index(arr, count);
 
-    if (browser_open) {
-        pldmgr_log("[Autoload] Browser Mode: Waiting for frontend connection...\n");
-        /* Wait for trigger (frontend connect) or safety timeout (15s) */
-        int wait_timeout = 50; // 50 * 100ms = 5 seconds
-        while (!autoload_triggered && wait_timeout-- > 0) {
-            if (abort_flag) return NULL;
-            usleep(100000);
+        if (active < 0) {
+            /* No enabled profile: show the startup picker if any exist. */
+            if (count > 0) {
+                picker_active = 1;
+                pldmgr_log("[Autoload] No enabled profile - showing startup picker (%d profiles).\n", count);
+            } else {
+                pldmgr_log("[Autoload] No profiles configured - booting to dashboard.\n");
+            }
+            free(arr);
+            return NULL;
         }
-        if (autoload_triggered) {
-            pldmgr_log("[Autoload] Frontend connected. Starting countdown.\n");
-        } else {
-            pldmgr_log("[Autoload] Frontend timeout. Starting countdown anyway.\n");
-        }
+
+        pldmgr_log("[Autoload] Enabled profile: %s\n", arr[active].name);
+        profiles_write_sequence(arr[active].list);
+        free(arr);
     }
 
-    countdown_end_time = get_current_time_ms() + (long long)auto_delay * 1000;
+    /* autoload.txt now holds the resolved sequence to run. */
+    if (stat(AUTOLOAD_CONFIG_PATH, &st) != 0) {
+        pldmgr_log("[Autoload] !!! Resolved sequence missing.\n");
+        return NULL;
+    }
 
-    /* Perform countdown for the specified delay in all modes */
-    if (auto_delay > 0) {
-        int klog_fd = -1;
-        
-        /* Only fallback to on-screen notification and PS button if browser is NOT automatically opened */
-        if (!browser_open) {
-            if (!pldmgr_server_is_active()) {
-                char ip[64];
-                if (pldmgr_get_local_ip(ip, sizeof(ip)) != 0) strcpy(ip, "0.0.0.0");
-                pldmgr_notify("Payload Manager Running\nhttp://%s:%d", ip, MENU_PORT);
-                pldmgr_notify("Autoloading in %ds\nPress PS Button to Abort", auto_delay);
-            }
+    if (forced) {
+        /* Manual pick from the startup selection: run immediately, no countdown. */
+        pldmgr_log("[Autoload] Manual run: executing selected profile immediately.\n");
+        countdown_end_time = 0;
+        remaining_seconds = 0;
+    } else {
+        remaining_seconds = auto_delay;
 
-            klog_fd = open("/dev/klog", O_RDONLY | O_NONBLOCK);
-            if (klog_fd >= 0) {
-                /* Flush existing log buffer so we only catch NEW button presses */
-                char flush_buf[4096];
-                while (read(klog_fd, flush_buf, sizeof(flush_buf)) > 0);
+        if (browser_open) {
+            pldmgr_log("[Autoload] Browser Mode: Waiting for frontend connection...\n");
+            /* Wait for trigger (frontend connect) or safety timeout (15s) */
+            int wait_timeout = 50; // 50 * 100ms = 5 seconds
+            while (!autoload_triggered && wait_timeout-- > 0) {
+                if (abort_flag) return NULL;
+                usleep(100000);
             }
-            pldmgr_log("[Autoload] Fallback Mode: Starting %ds countdown (PS Button active)...\n", auto_delay);
-        } else {
-            pldmgr_log("[Autoload] Browser Mode: Starting %ds countdown...\n", auto_delay);
+            if (autoload_triggered) {
+                pldmgr_log("[Autoload] Frontend connected. Starting countdown.\n");
+            } else {
+                pldmgr_log("[Autoload] Frontend timeout. Starting countdown anyway.\n");
+            }
         }
-        
-        char klog_buf[2048];
-        long long remaining_ms;
-        while ((remaining_ms = countdown_end_time - get_current_time_ms()) > 0) {
-            remaining_seconds = (int)((remaining_ms + 999) / 1000);
-            if (abort_flag) {
-                if (klog_fd >= 0) close(klog_fd);
-                countdown_end_time = 0;
-                remaining_seconds = -1;
-                return NULL;
+
+        countdown_end_time = get_current_time_ms() + (long long)auto_delay * 1000;
+
+        /* Perform countdown for the specified delay in all modes */
+        if (auto_delay > 0) {
+            int klog_fd = -1;
+
+            /* Only fallback to on-screen notification and PS button if browser is NOT automatically opened */
+            if (!browser_open) {
+                if (!pldmgr_server_is_active()) {
+                    char ip[64];
+                    if (pldmgr_get_local_ip(ip, sizeof(ip)) != 0) strcpy(ip, "0.0.0.0");
+                    pldmgr_notify("Payload Manager Running\nhttp://%s:%d", ip, MENU_PORT);
+                    pldmgr_notify("Autoloading in %ds\nPress PS Button to Abort", auto_delay);
+                }
+
+                klog_fd = open("/dev/klog", O_RDONLY | O_NONBLOCK);
+                if (klog_fd >= 0) {
+                    /* Flush existing log buffer so we only catch NEW button presses */
+                    char flush_buf[4096];
+                    while (read(klog_fd, flush_buf, sizeof(flush_buf)) > 0);
+                }
+                pldmgr_log("[Autoload] Fallback Mode: Starting %ds countdown (PS Button active)...\n", auto_delay);
+            } else {
+                pldmgr_log("[Autoload] Browser Mode: Starting %ds countdown...\n", auto_delay);
             }
 
-            if (klog_fd >= 0) {
-                ssize_t n = read(klog_fd, klog_buf, sizeof(klog_buf) - 1);
-                if (n > 0) {
-                    klog_buf[n] = 0;
-                    if (strstr(klog_buf, "onPSButtonPressed")) {
-                        pldmgr_log("[Autoload] ABORTED via PS Button.\n");
-                        pldmgr_notify("Autoload Aborted");
-                        abort_flag = 1;
-                        close(klog_fd);
-                        countdown_end_time = 0;
-                        remaining_seconds = -1;
-                        return NULL;
+            char klog_buf[2048];
+            long long remaining_ms;
+            while ((remaining_ms = countdown_end_time - get_current_time_ms()) > 0) {
+                remaining_seconds = (int)((remaining_ms + 999) / 1000);
+                if (abort_flag) {
+                    if (klog_fd >= 0) close(klog_fd);
+                    countdown_end_time = 0;
+                    remaining_seconds = -1;
+                    return NULL;
+                }
+
+                if (klog_fd >= 0) {
+                    ssize_t n = read(klog_fd, klog_buf, sizeof(klog_buf) - 1);
+                    if (n > 0) {
+                        klog_buf[n] = 0;
+                        if (strstr(klog_buf, "onPSButtonPressed")) {
+                            pldmgr_log("[Autoload] ABORTED via PS Button.\n");
+                            pldmgr_notify("Autoload Aborted");
+                            abort_flag = 1;
+                            close(klog_fd);
+                            countdown_end_time = 0;
+                            remaining_seconds = -1;
+                            return NULL;
+                        }
                     }
                 }
+                usleep(100000); /* 100ms */
             }
-            usleep(100000); /* 100ms */
+            if (klog_fd >= 0) close(klog_fd);
         }
-        if (klog_fd >= 0) close(klog_fd);
+        countdown_end_time = 0;
+        remaining_seconds = 0;
     }
-    countdown_end_time = 0;
-    remaining_seconds = 0;
+
     is_executing = 1;
-    
+
     FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "r");
     if (!f) {
         pldmgr_log("[Autoload] !!! Failed to open %s\n", AUTOLOAD_CONFIG_PATH);
@@ -198,14 +247,56 @@ void* pldmgr_autoload_worker(void* arg) {
     strcpy(autoload_current_name, "DONE");
     remaining_seconds = 0;
     is_executing = 0;
+    forced_run = 0;
     return NULL;
 }
 
 int pldmgr_autoload_start() {
     abort_flag = 0;
     is_executing = 0;
+    forced_run = 0;
     if (pthread_create(&autoload_thread, NULL, pldmgr_autoload_worker, NULL) != 0) {
         pldmgr_log("[Autoload] !!! Failed to create background thread\n");
+        return -1;
+    }
+    pthread_detach(autoload_thread);
+    return 0;
+}
+
+int pldmgr_autoload_run_profile(const char *id) {
+    if (!id || !id[0]) return -1;
+
+    ProfileEntry *arr = calloc(MAX_PROFILES, sizeof(ProfileEntry));
+    if (!arr) return -1;
+    int count = 0;
+    profiles_load(arr, &count);
+    int idx = profiles_find_by_id(arr, count, id);
+    if (idx < 0) {
+        free(arr);
+        pldmgr_log("[Autoload] !!! Manual run: unknown profile id '%s'\n", id);
+        return -1;
+    }
+
+    pldmgr_log("[Autoload] Manual run requested: %s\n", arr[idx].name);
+    profiles_write_sequence(arr[idx].list);
+    free(arr);
+
+    /* Leaving the picker and starting a forced (no-countdown) run. Prime the
+     * status fields up front so the first poll sees an active run (remaining >= 0)
+     * rather than a stale idle value, avoiding a dashboard flash. */
+    picker_active = 0;
+    abort_flag = 0;
+    is_executing = 0;
+    autoload_total_count = 0;
+    autoload_done_count = 0;
+    remaining_seconds = 0;
+    countdown_end_time = 0;
+    strcpy(autoload_current_name, "");
+    forced_run = 1;
+
+    if (pthread_create(&autoload_thread, NULL, pldmgr_autoload_worker, NULL) != 0) {
+        pldmgr_log("[Autoload] !!! Failed to create background thread\n");
+        forced_run = 0;
         return -1;
     }
     pthread_detach(autoload_thread);
@@ -230,6 +321,8 @@ void pldmgr_autoload_reset() {
     pldmgr_log("[PLDMGR] Autoload reset triggered\n");
     remaining_seconds = -1;
     is_executing = 0;
+    picker_active = 0;
+    forced_run = 0;
     autoload_total_count = 0;
     autoload_done_count = 0;
     autoload_triggered = 0;
@@ -237,39 +330,7 @@ void pldmgr_autoload_reset() {
 }
 
 void pldmgr_autoload_update_config_entry(const char *old_filename, const char *new_filename) {
-    FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "r");
-    if (!f) return;
-
-    char lines[100][256];
-    int line_count = 0;
-    int modified = 0;
-
-    while (line_count < 100 && fgets(lines[line_count], sizeof(lines[0]), f)) {
-        char clean_line[256];
-        strcpy(clean_line, lines[line_count]);
-        clean_line[strcspn(clean_line, "\r\n")] = 0;
-        
-        if (strcmp(clean_line, old_filename) == 0) {
-            modified = 1;
-            if (new_filename) {
-                snprintf(lines[line_count], sizeof(lines[0]), "%s\n", new_filename);
-                line_count++;
-            }
-            /* If new_filename is NULL, we just skip incrementing line_count, effectively deleting it */
-        } else {
-            line_count++;
-        }
-    }
-    fclose(f);
-
-    if (modified) {
-        f = fopen(AUTOLOAD_CONFIG_PATH, "w");
-        if (f) {
-            for (int i = 0; i < line_count; i++) {
-                fputs(lines[i], f);
-            }
-            fclose(f);
-            pldmgr_log("[Autoload] Config updated: replaced/removed %s\n", old_filename);
-        }
-    }
+    /* Renames/removals of a payload must be reflected inside every profile's
+     * sequence, not just a single autoload list. */
+    profiles_propagate_payload_change(old_filename, new_filename);
 }

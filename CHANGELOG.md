@@ -1,3 +1,11 @@
+## Unreleased
+
+### 🚀 Features & UX Improvements
+* **Autoload Profiles**: The single autoload sequence is now split into multiple named **profiles**. Enable one profile to have it auto-run on startup (with the existing countdown/abort overlay), or leave all profiles disabled to get a **startup selection screen** where you pick a profile to run immediately. Enabling a profile automatically disables the previously enabled one (single active profile). Existing `autoload.txt` sequences are migrated into a "Default" profile on first launch.
+
+### 🛠️ Backend & API Updates
+* Profiles are stored in `profiles.json` and managed via new `/profiles_get`, `/profiles_set`, and `/profile_run` endpoints. `/autoload_status` now reports a `picker` flag. `autoload.txt` becomes an internal scratch file resolved from the active/selected profile.
+
 ## v0.5.0
 
 ### 🚀 Features & UX Improvements

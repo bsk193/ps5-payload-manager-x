@@ -1,70 +1,52 @@
-name: Release On-Demand
+name: Release on tag
+
+# Auto-triggers when a version tag (e.g. v0.5.0) is pushed. Builds the
+# "Payload Manager X" replacement binary (port 8084), names it
+# pldmgrx_<tag>.elf (e.g. pldmgrx_v0.5.0.elf), and publishes a GitHub Release
+# with that ELF attached.
+#
+# Cut a release with:
+#   git tag v0.5.0 && git push origin v0.5.0
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
 
 jobs:
-  build-and-release:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Extract Version
-        id: version
-        run: |
-          VERSION=$(grep '#define MENU_VERSION' include/pldmgr.h | awk '{print $3}' | tr -d '"' | tr -d '\r')
-          if [ -z "$VERSION" ]; then
-            echo "Error: Could not find MENU_VERSION in include/pldmgr.h"
-            exit 1
-          fi
-          echo "Extracted version: $VERSION"
-          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+      - name: Build frontend
+        run: make frontend-build
 
-      - name: Check if release exists
+      - name: Build PS5 SDK Docker image
+        run: docker build -t ps5-payload-sdk -f Dockerfile.sdk .
+
+      - name: Build Payload Manager X (port 8084)
+        run: docker run --rm -v "$(pwd)":/src -w /src ps5-payload-sdk make clean all PLDMGRX=1 PLDMGRX_PORT=8084
+
+      - name: Name the release ELF
+        run: mv pldmgrx_8084.elf "pldmgrx_${{ github.ref_name }}.elf"
+
+      - name: Create GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists. Aborting."
-            exit 1
-          fi
-          echo "Release $TAG does not exist. Proceeding."
-
-      - name: Build Payload Manager
-        run: |
-          chmod +x build_release.sh
-          ./build_release.sh
-
-      - name: Create Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          VERSION="${{ steps.version.outputs.version }}"
-          # Get the most recent tag before this release to generate the changelog link
-          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
-          if [ -n "$PREV_TAG" ]; then
-            NOTES="Full Changelog: https://github.com/${{ github.repository }}/compare/$PREV_TAG...$TAG"
-          else
-            NOTES="First Release."
-          fi
-          
-          # Create the release and upload the ELF file
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes "$NOTES" \
-            "pldmgr_v${VERSION}.elf"
+          gh release create "${{ github.ref_name }}" \
+            --title "Payload Manager X ${{ github.ref_name }}" \
+            --generate-notes \
+            "pldmgrx_${{ github.ref_name }}.elf"

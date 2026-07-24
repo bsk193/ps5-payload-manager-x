@@ -62,23 +62,75 @@ let mockSources = [
   { id: 'source_community', name: 'Community Payloads', url: 'https://example.com/community-payloads.json', removable: true }
 ];
 
+// Profiles (autoload sequences). `list` is a comma-separated string on the wire.
+// Default: two profiles, none enabled -> boots into the startup picker so the
+// new feature is visible immediately. Enable one to test the auto-run path.
+let mockProfiles = [
+  { id: 'gaming', name: 'Gaming', enabled: false, list: 'goldhen_v2.4b17.elf,!1000,etaHEN_1.8.elf' },
+  { id: 'development', name: 'Development', enabled: false, list: 'kstuff.elf' }
+];
+
 let autoloadStatus = {
-  remaining: 10,
-  total: 2,
+  remaining: -1,
+  remaining_ms: -1000,
+  total: 0,
   done: 0,
   current: "IDLE",
-  list: "goldhen_v2.4b17.elf,etaHEN_1.8.elf"
+  list: "",
+  delay: 5,
+  picker: false
 };
 
-const autoloadList = autoloadStatus.list.split(',');
+let seqEntries = [];       // payloads of the currently running sequence (no delays)
 let simulationTicks = 0;
+
+function resolveActive() {
+  return mockProfiles.find(p => p.enabled === true || p.enabled === 'true') || null;
+}
+
+function startSequence(listStr, withCountdown) {
+  const entries = String(listStr || '').split(',').filter(Boolean);
+  seqEntries = entries.filter(e => !e.startsWith('!'));
+  autoloadStatus.list = seqEntries.join(',');
+  autoloadStatus.total = seqEntries.length;
+  autoloadStatus.done = 0;
+  autoloadStatus.picker = false;
+  autoloadStatus.delay = 5;
+  simulationTicks = 0;
+  if (withCountdown) {
+    autoloadStatus.remaining = 5;
+    autoloadStatus.remaining_ms = 5000;
+    autoloadStatus.current = '';
+  } else {
+    autoloadStatus.remaining = 0;
+    autoloadStatus.remaining_ms = 0;
+    autoloadStatus.current = seqEntries[0] || 'DONE';
+  }
+}
+
+// Boot decision (mirrors the backend autoload worker).
+(function boot() {
+  const active = resolveActive();
+  if (active) {
+    logs.push(`[PLDMGR] Autoload: enabled profile '${active.name}'`);
+    startSequence(active.list, true);
+  } else if (mockProfiles.length > 0) {
+    logs.push(`[PLDMGR] Autoload: no enabled profile - showing startup picker`);
+    autoloadStatus.picker = true;
+    autoloadStatus.remaining = -1;
+    autoloadStatus.remaining_ms = -1000;
+  } else {
+    logs.push(`[PLDMGR] Autoload: no profiles - booting to dashboard`);
+  }
+})();
 
 setInterval(() => {
   if (autoloadStatus.remaining > 0) {
     autoloadStatus.remaining--;
+    autoloadStatus.remaining_ms = autoloadStatus.remaining * 1000;
     if (autoloadStatus.remaining === 0) {
-      autoloadStatus.current = autoloadList[0];
-      logs.push(`[PLDMGR] Autoload sequence started: ${autoloadList[0]}`);
+      autoloadStatus.current = seqEntries[0] || 'DONE';
+      logs.push(`[PLDMGR] Autoload sequence started: ${autoloadStatus.current}`);
     }
   } else if (autoloadStatus.remaining === 0 && autoloadStatus.current !== "DONE" && autoloadStatus.current !== "IDLE") {
     simulationTicks++;
@@ -86,7 +138,7 @@ setInterval(() => {
       simulationTicks = 0;
       autoloadStatus.done++;
       if (autoloadStatus.done < autoloadStatus.total) {
-        autoloadStatus.current = autoloadList[autoloadStatus.done];
+        autoloadStatus.current = seqEntries[autoloadStatus.done];
         logs.push(`[PLDMGR] Autoloading: ${autoloadStatus.current}`);
       } else {
         autoloadStatus.current = "DONE";
@@ -233,6 +285,34 @@ app.post('/set_config', (req, res) => {
   res.send('OK');
 });
 
+// --- Profiles ---
+app.get('/profiles_get', (req, res) => {
+  res.json({ profiles: mockProfiles });
+});
+
+app.post('/profiles_set', (req, res) => {
+  if (Array.isArray(req.body.profiles)) {
+    // Enforce at-most-one-enabled, like the backend.
+    let seen = false;
+    mockProfiles = req.body.profiles.map(p => {
+      const enabled = (p.enabled === true || p.enabled === 'true') && !seen;
+      if (enabled) seen = true;
+      return { id: p.id, name: p.name, enabled, list: p.list || '' };
+    });
+    logs.push(`[PLDMGR] Profiles updated: ${mockProfiles.length} profiles`);
+  }
+  res.send('OK');
+});
+
+app.get('/profile_run', (req, res) => {
+  const id = req.query.id;
+  const p = mockProfiles.find(x => x.id === id);
+  if (!p) return res.status(400).json({ ok: false });
+  logs.push(`[PLDMGR] Manual run: ${p.name}`);
+  startSequence(p.list, false); // run immediately, no countdown
+  res.json({ ok: true });
+});
+
 app.get(/^\/loadpayload:(.*)/, (req, res) => {
   const path = req.params[0];
   logs.push(`[PLDMGR] Executing payload: ${path}`);
@@ -254,7 +334,9 @@ app.post('/manage\\:upload', (req, res) => {
 app.get('/abort', (req, res) => {
   logs.push(`[PLDMGR] Autoload sequence aborted by user`);
   autoloadStatus.remaining = -1;
+  autoloadStatus.remaining_ms = -1000;
   autoloadStatus.current = "IDLE";
+  autoloadStatus.picker = false;
   res.send('OK');
 });
 
@@ -263,6 +345,8 @@ app.get('/autoload_clear', (req, res) => {
   autoloadStatus.done = 0;
   autoloadStatus.current = "IDLE";
   autoloadStatus.remaining = -1;
+  autoloadStatus.remaining_ms = -1000;
+  autoloadStatus.picker = false;
   res.send('OK');
 });
 

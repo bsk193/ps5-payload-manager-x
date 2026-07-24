@@ -753,6 +753,7 @@ function App() {
               payloads={payloads}
               profiles={profiles}
               onSaveProfiles={saveProfiles}
+              onRunProfile={handleRunProfile}
               onToast={addToast}
               onRedirect={(v, target) => {
                 if (target) setStorageScrollTarget(target)

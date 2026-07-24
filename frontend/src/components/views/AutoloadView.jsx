@@ -10,7 +10,7 @@ const serialize = (profiles) => JSON.stringify(
   profiles.map(p => ({ id: p.id, name: p.name, enabled: !!p.enabled, list: p.list.join(',') }))
 )
 
-const AutoloadView = ({ payloads, profiles: incomingProfiles, onSaveProfiles, onToast, onRedirect }) => {
+const AutoloadView = ({ payloads, profiles: incomingProfiles, onSaveProfiles, onRunProfile, onToast, onRedirect }) => {
   const { t } = useTranslation()
 
   const [profiles, setProfiles] = useState([])
@@ -393,7 +393,7 @@ const AutoloadView = ({ payloads, profiles: incomingProfiles, onSaveProfiles, on
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {profiles.map(p => {
               const count = p.list.filter(x => !x.startsWith('!')).length
               return (
@@ -420,6 +420,15 @@ const AutoloadView = ({ payloads, profiles: incomingProfiles, onSaveProfiles, on
                   </button>
 
                   <div className="flex items-center gap-2 shrink-0">
+                    {/* Run now */}
+                    <button
+                      onClick={() => onRunProfile && onRunProfile(p.id)}
+                      disabled={count === 0}
+                      title={t("profiles.run_now", "Run now")}
+                      className="p-3 bg-ps-blue/15 text-ps-blue hover:bg-ps-blue hover:text-white rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                    >
+                      <Play className="w-5 h-5" />
+                    </button>
                     {/* Active toggle */}
                     <button
                       onClick={() => toggleActive(p.id)}

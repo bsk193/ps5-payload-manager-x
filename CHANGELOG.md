@@ -1,4 +1,4 @@
-## Unreleased
+## v0.6.0
 
 ### 🚀 Features & UX Improvements
 * **Autoload Profiles**: The single autoload sequence is now split into multiple named **profiles**. Enable one profile to have it auto-run on startup (with the existing countdown/abort overlay), or leave all profiles disabled to get a **startup selection screen** where you pick a profile to run immediately. Enabling a profile automatically disables the previously enabled one (single active profile). Existing `autoload.txt` sequences are migrated into a "Default" profile on first launch.

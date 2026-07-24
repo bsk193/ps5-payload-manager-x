@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
         sleep(1);
     }
 
-    pldmgr_log("[PLDMGR] Starting Payload Manager v%s on port %d...\n",
+    pldmgr_log("[PLDMGR] Starting " PLDMGR_APP_NAME " v%s on port %d...\n",
                pldmgr_version_sig + 11, port);
 
     /* Check for Self-Update */
@@ -203,7 +203,7 @@ int main(int argc, char *argv[]) {
                            current_ip);
             } else {
                 pldmgr_log("[PLDMGR] !!! Failed to restart server after standby!\n");
-                pldmgr_notify("Payload Manager: Server restart failed after standby");
+                pldmgr_notify(PLDMGR_APP_NAME ": Server restart failed after standby");
                 strcpy(current_ip, "unknown");
             }
 
@@ -234,7 +234,7 @@ int main(int argc, char *argv[]) {
                 if (daemon) {
                     strcpy(current_ip, new_ip);
                     pldmgr_log("[PLDMGR] Server restored on %s:%d\n", current_ip, port);
-                    pldmgr_notify("Payload Manager: Service Restored\nIP: %s", current_ip);
+                    pldmgr_notify(PLDMGR_APP_NAME ": Service Restored\nIP: %s", current_ip);
                 } else {
                     pldmgr_log("[PLDMGR] !!! Failed to restore server!\n");
                 }
@@ -259,7 +259,7 @@ int main(int argc, char *argv[]) {
                 } else {
                     pldmgr_log("[PLDMGR] !!! Failed to restart server after "
                                "network loss!\n");
-                    pldmgr_notify("Payload Manager: Server restart failed");
+                    pldmgr_notify(PLDMGR_APP_NAME ": Server restart failed");
                 }
             }
         }

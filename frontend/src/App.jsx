@@ -557,7 +557,7 @@ function App() {
               <div className="p-2 bg-ps-blue rounded-xl">
                 <LogoIcon className="w-6 h-6 text-white" />
               </div>
-              <span className="text-2xl font-bold tracking-tight text-white">PLDMGR</span>
+              <span className="text-2xl font-bold tracking-tight text-white">PLDMGR X</span>
             </div>
           </div>
 

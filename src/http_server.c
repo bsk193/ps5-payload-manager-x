@@ -898,7 +898,7 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
         }
         MHD_add_response_header(resp, "Content-Type", "text/plain");
     } else if (strcmp(url, ROUTE_SHUTDOWN) == 0) {
-        const char *msg = "Payload Manager Core shutting down...\n";
+        const char *msg = PLDMGR_APP_NAME " Core shutting down...\n";
         pldmgr_log("[PLDMGR] %s", msg);
         resp = MHD_create_response_from_buffer(strlen(msg), (void *)msg,
                                                MHD_RESPMEM_PERSISTENT);

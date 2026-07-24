@@ -39,6 +39,19 @@ for (const path in modules) {
   }
 }
 
+// Rebrand to "Payload Manager X" at load time. The translation strings come
+// from the shared upstream translations submodule (reset on every CI build), so
+// rewriting them here avoids forking that repo. Replaces "Payload Manager" only
+// when not already followed by " X", so it never doubles up.
+for (const lng in resources) {
+  const tr = resources[lng].translation;
+  for (const key in tr) {
+    if (typeof tr[key] === 'string') {
+      tr[key] = tr[key].replace(/Payload Manager(?! X)/g, 'Payload Manager X');
+    }
+  }
+}
+
 i18n
   // detect user language
   // learn more: https://github.com/i18next/i18next-browser-languageDetector

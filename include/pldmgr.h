@@ -16,7 +16,10 @@
     #define MENU_PORT 8084
   #endif
   #define PLDMGR_DATA_ROOT "/data/pldmgrx"
-  #define PLDMGR_TITLE_ID  "PLDMGRX01"
+  /* PS5 title IDs must be 4 uppercase letters + 5 digits (like the official
+   * PLDM00001). A malformed id (e.g. PLDMGRX01) is rejected and no app tile is
+   * created. PLDM00002 keeps the proven prefix but a distinct number. */
+  #define PLDMGR_TITLE_ID  "PLDM00002"
   #define PLDMGR_APP_NAME  "Payload Manager X"
 #else
   #define MENU_PORT        8084

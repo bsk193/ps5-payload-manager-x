@@ -2,7 +2,6 @@
  <img src="./assets/icon0.png" width="128" />
 </p>
 <h1 align="center">PS5 Payload Manager</h1>
-<h2 align="center">w/ Autoload Profiles</h2>
 
 <p align="center">A modern, web-based dashboard to easily manage, import, and automatically load payloads on your PS5.</p>
 
@@ -18,6 +17,7 @@
 - **Web-Based Interface**: A modern dashboard to manage payloads from your PC, phone, or the PS5 itself.
 - **Import Payloads**: Easily add new payloads from a USB drive or download them from the cloud repository.
 - **Automated Startup**: Set up a list of payloads to load automatically whenever you start the manager.
+- **Multiple Automated Startup Profiles**: Set up profiles of payloads to load automatically whenever you start the manager.
 - **Home Screen Shortcut**: Installs a dedicated "Payload Manager" app icon to your PS5 home screen for quick access.
 - **Auto-Close Disc Player**: Optional setting to automatically close the Disc Player on startup (useful for BD-JB users).
 

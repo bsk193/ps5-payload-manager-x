@@ -26,15 +26,29 @@ const remoteRepository = [
     url: "https://itsplk.github.io/ps5_payloads/payloads/ftpsrv_v0.19.elf",
     description: "A simple FTP server that accepts connections on port 2121",
     version: "v0.19",
+    min_fw: "1.00",
+    max_fw: "10.20",
     checksum: "e6c1babbfd5e1b766d12b659853b514b9faedf6333cbe8cb514b1a3e79b7ce39"
   },
   {
-    name: "kstuff-lite",
-    filename: "kstuff-lite_v1.03.elf",
-    url: "https://itsplk.github.io/ps5_payloads/payloads/kstuff-lite_v1.03.elf",
-    description: "Lite version of kstuff",
-    version: "v1.03",
+    name: "KStuff Lite",
+    filename: "kstuff-lite_v1.09.elf",
+    url: "https://bsk193.github.io/ps5-payloads-mirror/payloads/kstuff-lite_v1.09.elf",
+    description: "Lite version of kstuff (latest)",
+    version: "v1.09",
+    min_fw: "1.00",
+    max_fw: "10.20",
     checksum: "54df47a48d9c5ee4338ef70ba66093908a4f2845e53468bdd7c080b65d7488c1"
+  },
+  {
+    name: "KStuff Lite",
+    filename: "kstuff-lite_v1.06.elf",
+    url: "https://bsk193.github.io/ps5-payloads-mirror/payloads/kstuff-lite_v1.06.elf",
+    description: "Lite version of kstuff (older FW)",
+    version: "v1.06",
+    min_fw: "1.00",
+    max_fw: "7.61",
+    checksum: "aaaa47a48d9c5ee4338ef70ba66093908a4f2845e53468bdd7c080b65d7488c2"
   }
 ];
 
@@ -168,10 +182,15 @@ app.get('/list_payloads', (req, res) => {
     ],
     meta: {
       // payloads with no entry here = local/direct upload (no badge shown)
+      "goldhen_v2.4b17.elf": { version: "v2.4b17", min_fw: "1.00", max_fw: "7.61" },
+      "etaHEN_1.8.elf": { version: "1.8", min_fw: "1.00", max_fw: "10.20" },
       "kstuff.elf": {
         source_name: "Community Payloads",
         install_source: "repository",
-        install_source_detail: "https://example.com/community-payloads.json"
+        install_source_detail: "https://example.com/community-payloads.json",
+        version: "v1.03",
+        min_fw: "2.50",
+        max_fw: "10.01"
       }
     }
   });

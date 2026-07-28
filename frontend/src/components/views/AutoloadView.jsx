@@ -10,8 +10,9 @@ const serialize = (profiles) => JSON.stringify(
   profiles.map(p => ({ id: p.id, name: p.name, enabled: !!p.enabled, list: p.list.join(',') }))
 )
 
-const AutoloadView = ({ payloads, profiles: incomingProfiles, onSaveProfiles, onRunProfile, onToast, onRedirect }) => {
+const AutoloadView = ({ payloads, profiles: incomingProfiles, payloadMeta = {}, onSaveProfiles, onRunProfile, onToast, onRedirect }) => {
   const { t } = useTranslation()
+  const metaFor = (name) => payloadMeta?.[name] || {}
 
   const [profiles, setProfiles] = useState([])
   const [editingId, setEditingId] = useState(null) // null = overview
@@ -166,7 +167,7 @@ const AutoloadView = ({ payloads, profiles: incomingProfiles, onSaveProfiles, on
                   isBlocked ? "opacity-40 cursor-not-allowed" : "bg-white/[0.03] hover:border-ps-blue group"
                 )}
               >
-                <PayloadName path={p} className={cn("text-xl", isBlocked ? "text-zinc-500" : "text-white")} stacked />
+                <PayloadName path={p} version={metaFor(p).version || null} minFw={metaFor(p).min_fw || null} maxFw={metaFor(p).max_fw || null} className={cn("text-xl", isBlocked ? "text-zinc-500" : "text-white")} stacked />
                 <ArrowRight className={cn("w-6 h-6 transition-all shrink-0 mt-1", isBlocked ? "text-zinc-800" : "text-zinc-500 group-hover:text-ps-blue group-hover:translate-x-2")} />
               </button>
             )
@@ -231,7 +232,7 @@ const AutoloadView = ({ payloads, profiles: incomingProfiles, onSaveProfiles, on
                 <span className="text-gray-500 text-[12px] font-black">{i + 1}</span>
               </div>
               <div className="flex items-center min-w-0 pl-2">
-                <PayloadName path={p} className="text-white" stacked />
+                <PayloadName path={p} version={metaFor(p).version || null} minFw={metaFor(p).min_fw || null} maxFw={metaFor(p).max_fw || null} className="text-white" stacked />
               </div>
               <div className="flex items-center space-x-2">
                 <button onClick={() => moveUp(i)} disabled={i === 0} className="p-2 bg-white/10 text-zinc-400 hover:bg-ps-blue hover:text-white rounded-xl disabled:opacity-20">

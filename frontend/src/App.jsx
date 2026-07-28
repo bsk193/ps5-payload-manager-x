@@ -635,6 +635,8 @@ function App() {
                 isLoading={loading && activeLoadingName === p.split('/').pop().replace(/\.(elf|bin)$/i, '').replace(/_/g, ' ')}
                 sourceName={config.MULTI_SOURCES_ENABLED ? (payloadMeta[p.split('/').pop()]?.source_name || null) : null}
                 version={payloadMeta[p.split('/').pop()]?.version || null}
+                minFw={payloadMeta[p.split('/').pop()]?.min_fw || null}
+                maxFw={payloadMeta[p.split('/').pop()]?.max_fw || null}
                 isFavorite={favoritePayloads.includes(p)}
                 isLaunched={launchHistory.includes(p)}
                 isEditMode={isFavoriteEditMode}
@@ -752,6 +754,7 @@ function App() {
             <AutoloadView
               payloads={payloads}
               profiles={profiles}
+              payloadMeta={payloadMeta}
               onSaveProfiles={saveProfiles}
               onRunProfile={handleRunProfile}
               onToast={addToast}

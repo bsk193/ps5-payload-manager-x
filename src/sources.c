@@ -471,7 +471,7 @@ size_t sources_multi_repository_list_json(char *buf, size_t size, int force_refr
             for (size_t pi = 0; pi < count; pi++) {
                 char name_pe[256], filename_e[512], desc_e[2048];
                 char ver_e[128], url_e[2048], src_id_e[128], src_name_e[512];
-                char last_upd_e[128], cat_e[256];
+                char last_upd_e[128], cat_e[256], minfw_e[128], maxfw_e[128];
 
                 pldmgr_json_escape(items[pi].name,        name_pe,    sizeof(name_pe));
                 pldmgr_json_escape(items[pi].filename,    filename_e, sizeof(filename_e));
@@ -480,14 +480,17 @@ size_t sources_multi_repository_list_json(char *buf, size_t size, int force_refr
                 pldmgr_json_escape(items[pi].url,         url_e,      sizeof(url_e));
                 pldmgr_json_escape(items[pi].last_update, last_upd_e, sizeof(last_upd_e));
                 pldmgr_json_escape(items[pi].category,    cat_e,      sizeof(cat_e));
+                pldmgr_json_escape(items[pi].min_fw,      minfw_e,    sizeof(minfw_e));
+                pldmgr_json_escape(items[pi].max_fw,      maxfw_e,    sizeof(maxfw_e));
                 pldmgr_json_escape(sources[si].id,        src_id_e,   sizeof(src_id_e));
                 pldmgr_json_escape(sources[si].name,      src_name_e, sizeof(src_name_e));
 
                 if (json_append(&jb, "    {\"name\":\"%s\",\"filename\":\"%s\",\"description\":\"%s\","
                     "\"version\":\"%s\",\"last_update\":\"%s\",\"url\":\"%s\","
-                    "\"source_id\":\"%s\",\"source_name\":\"%s\",\"category\":\"%s\"}%s\n",
+                    "\"source_id\":\"%s\",\"source_name\":\"%s\",\"category\":\"%s\","
+                    "\"min_fw\":\"%s\",\"max_fw\":\"%s\"}%s\n",
                     name_pe, filename_e, desc_e, ver_e, last_upd_e, url_e,
-                    src_id_e, src_name_e, cat_e,
+                    src_id_e, src_name_e, cat_e, minfw_e, maxfw_e,
                     (pi < count - 1) ? "," : "") != 0) {
                     break;
                 }

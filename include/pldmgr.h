@@ -71,7 +71,7 @@
 #define ROUTE_PROCESS_KILL "/process_kill"
 #define ROUTE_HISTORY_LIST "/history_list"
 
-#define MENU_VERSION "0.5.0.2x"
+#define MENU_VERSION "0.5.0.3x"
 /* autoload.txt is the persistent "startup payloads" list (always run on boot,
  * pldmgr-style, toggled per-payload in Manage Payloads). The active/selected
  * profile sequence is resolved into a separate scratch file. */

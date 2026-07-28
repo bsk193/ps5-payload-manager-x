@@ -4,7 +4,7 @@ import { Loader2, Globe, Star, ChevronLeft, ChevronRight, CheckCircle2 } from 'l
 import PayloadName from './PayloadName'
 import { cn } from '../../utils/helpers'
 
-const PayloadButton = ({ path, onClick, isLoading, sourceName, version, minFw, maxFw, fwIncompatible, isFavorite, isLaunched, isEditMode, onMoveFavorite, canMoveLeft, canMoveRight }) => {
+const PayloadButton = ({ path, name, onClick, isLoading, sourceName, version, minFw, maxFw, fwIncompatible, isFavorite, isLaunched, isEditMode, onMoveFavorite, canMoveLeft, canMoveRight }) => {
   const { t } = useTranslation()
   return (
     <button
@@ -13,7 +13,7 @@ const PayloadButton = ({ path, onClick, isLoading, sourceName, version, minFw, m
       className="group glass-card p-6 rounded-ps-xl flex flex-col border border-white/5 hover:border-ps-blue hover:bg-ps-blue/5 transition-all text-left relative"
     >
       <div className="flex items-start justify-between w-full z-10">
-        <PayloadName path={path} version={version} minFw={minFw} maxFw={maxFw} fwIncompatible={fwIncompatible} className="text-white text-xl" stacked />
+        <PayloadName path={path} name={name} version={version} minFw={minFw} maxFw={maxFw} fwIncompatible={fwIncompatible} className="text-white text-xl" stacked />
         <div className="flex items-center gap-2 shrink-0">
           {isEditMode && (
             <div

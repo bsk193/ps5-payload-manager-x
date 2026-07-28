@@ -3,12 +3,18 @@ import { Zap, Usb } from 'lucide-react'
 import { cn, parsePayloadName } from '../../utils/helpers'
 import { useTranslation } from 'react-i18next'
 
-const PayloadName = ({ path, version: repoVersion, className, versionClassName, stacked = false, hideIcon = false, lastUpdate = null, minFw = null, maxFw = null, fwIncompatible = false }) => {
+const PayloadName = ({ path, name, version: repoVersion, className, versionClassName, stacked = false, hideIcon = false, lastUpdate = null, minFw = null, maxFw = null, fwIncompatible = false }) => {
   const { t } = useTranslation();
   let { displayName, version, isDelay, delaySeconds } = parsePayloadName(path);
   const isUsb = path?.startsWith('/mnt/usb');
 
   if (repoVersion) version = repoVersion;
+  // Prefer the repository "name" field when it's a real display name (not just a
+  // filename). Payloads without metadata (USB / manual uploads whose stored name
+  // is the filename) fall back to the cleaned filename.
+  if (name && !isDelay && !/\.(elf|bin)$/i.test(name)) {
+    displayName = name;
+  }
   if (isDelay) {
     displayName = t("autoload.delay_item", "Delay ({{seconds}}s)", { seconds: delaySeconds || 1 });
   }

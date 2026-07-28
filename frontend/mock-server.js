@@ -187,9 +187,10 @@ app.get('/list_payloads', (req, res) => {
     ],
     meta: {
       // payloads with no entry here = local/direct upload (no badge shown)
-      "goldhen_v2.4b17.elf": { version: "v2.4b17", min_fw: "1.00", max_fw: "7.61" },
-      "etaHEN_1.8.elf": { version: "1.8", min_fw: "1.00", max_fw: "10.20" },
+      "goldhen_v2.4b17.elf": { display_name: "GoldHEN", version: "v2.4b17", min_fw: "1.00", max_fw: "7.61" },
+      "etaHEN_1.8.elf": { display_name: "etaHEN", version: "1.8", min_fw: "1.00", max_fw: "10.20" },
       "kstuff.elf": {
+        display_name: "KStuff",
         source_name: "Community Payloads",
         install_source: "repository",
         install_source_detail: "https://example.com/community-payloads.json",

@@ -682,6 +682,7 @@ function App() {
                 path={p}
                 onClick={() => isFavoriteEditMode ? toggleFavorite(p) : loadPayload(p)}
                 isLoading={loading && activeLoadingName === p.split('/').pop().replace(/\.(elf|bin)$/i, '').replace(/_/g, ' ')}
+                name={payloadMeta[p.split('/').pop()]?.display_name || null}
                 sourceName={config.MULTI_SOURCES_ENABLED ? (payloadMeta[p.split('/').pop()]?.source_name || null) : null}
                 version={payloadMeta[p.split('/').pop()]?.version || null}
                 minFw={payloadMeta[p.split('/').pop()]?.min_fw || null}

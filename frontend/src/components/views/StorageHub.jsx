@@ -18,7 +18,7 @@ const PayloadItem = ({ p, multiSources, isPS5, onInstall, srcId, srcUrl, console
     )}
   >
     <div className="space-y-2 min-w-0">
-      <PayloadName path={p.filename} version={p.version} minFw={p.min_fw} maxFw={p.max_fw} fwIncompatible={!fwCompatible(p.min_fw, p.max_fw, consoleFw)} className="text-xl md:text-2xl text-white" stacked lastUpdate={p.last_update} />
+      <PayloadName path={p.filename} name={p.name} version={p.version} minFw={p.min_fw} maxFw={p.max_fw} fwIncompatible={!fwCompatible(p.min_fw, p.max_fw, consoleFw)} className="text-xl md:text-2xl text-white" stacked lastUpdate={p.last_update} />
       {p.description && (
         <p className="text-sm md:text-base text-zinc-400 font-medium leading-relaxed">{p.description}</p>
       )}
@@ -245,7 +245,7 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
                         <Package className="w-6 h-6 md:w-8 md:h-8 text-zinc-400 group-hover:text-ps-blue transition-colors" />
                       </div>
                       <div className="min-w-0 flex-1 space-y-1">
-                        <PayloadName path={fileName} version={meta?.version || null} minFw={meta?.min_fw || null} maxFw={meta?.max_fw || null} fwIncompatible={!fwCompatible(meta?.min_fw, meta?.max_fw, consoleFw)} className="text-xl md:text-2xl text-white" stacked />
+                        <PayloadName path={fileName} name={meta?.display_name || null} version={meta?.version || null} minFw={meta?.min_fw || null} maxFw={meta?.max_fw || null} fwIncompatible={!fwCompatible(meta?.min_fw, meta?.max_fw, consoleFw)} className="text-xl md:text-2xl text-white" stacked />
                         {sourceBadge && (
                           <div className="flex items-center gap-1 text-zinc-500 text-[11px] select-none font-medium">
                             <Globe className="w-3.5 h-3.5" />

@@ -2,6 +2,7 @@
  <img src="./assets/icon0.png" width="128" />
 </p>
 <h1 align="center">PS5 Payload Manager</h1>
+<h2 align="center">w/ Autoload Profiles</h2>
 
 <p align="center">A modern, web-based dashboard to easily manage, import, and automatically load payloads on your PS5.</p>
 

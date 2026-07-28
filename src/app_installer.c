@@ -29,10 +29,11 @@
 
 #ifdef PLDMGRX
 INCASSET(param_json, "assets/param_x.json");
+INCASSET(icon0_png, "assets/icon0_x.png");
 #else
 INCASSET(param_json, "assets/param.json");
-#endif
 INCASSET(icon0_png, "assets/icon0.png");
+#endif
 
 int sceAppInstUtilInitialize(void);
 int sceAppInstUtilTerminate(void);

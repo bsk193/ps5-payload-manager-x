@@ -51,6 +51,9 @@
 #define ROUTE_PROFILES_GET "/profiles_get"
 #define ROUTE_PROFILES_SET "/profiles_set"
 #define ROUTE_PROFILE_RUN "/profile_run"
+#define ROUTE_STARTUP_GET "/startup_get"
+#define ROUTE_STARTUP_TOGGLE "/startup_toggle"
+#define ROUTE_SYSTEM_INFO "/system_info"
 #define ROUTE_REPO_LIST "/repository_payloads"
 #define ROUTE_REPO_REFRESH "/repository_refresh"
 #define ROUTE_REPO_INSTALL "/repository_install"
@@ -69,7 +72,12 @@
 #define ROUTE_HISTORY_LIST "/history_list"
 
 #define MENU_VERSION "0.5.0.1x"
+/* autoload.txt is the persistent "startup payloads" list (always run on boot,
+ * pldmgr-style, toggled per-payload in Manage Payloads). The active/selected
+ * profile sequence is resolved into a separate scratch file. */
 #define AUTOLOAD_CONFIG_PATH PLDMGR_DATA_ROOT "/autoload.txt"
+#define STARTUP_LIST_PATH    AUTOLOAD_CONFIG_PATH
+#define PROFILE_SCRATCH_PATH PLDMGR_DATA_ROOT "/profile_run.txt"
 #define PROFILES_CONFIG_PATH PLDMGR_DATA_ROOT "/profiles.json"
 #define PLDMGR_CONFIG_PATH PLDMGR_DATA_ROOT "/pldmgr_config.txt"
 #define REPOSITORY_CACHE_PATH PLDMGR_DATA_ROOT "/repository_cache.json"

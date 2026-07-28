@@ -172,6 +172,11 @@ app.get('/version', (req, res) => {
   res.send('1.0.2-mock');
 });
 
+app.get('/system_info', (req, res) => {
+  // Simulate a console on FW 10.20 -> payloads with max_fw < 10.20 are incompatible.
+  res.json({ fw: '10.20' });
+});
+
 app.get('/list_payloads', (req, res) => {
   res.json({
     payloads: [
@@ -323,6 +328,19 @@ app.post('/profiles_set', (req, res) => {
   res.send('OK');
 });
 
+// --- Startup payloads (always-run list) ---
+let mockStartup = [];
+app.get('/startup_get', (req, res) => res.json({ startup: mockStartup }));
+app.get('/startup_toggle', (req, res) => {
+  const f = req.query.filename;
+  const en = req.query.enabled === '1';
+  if (f) {
+    mockStartup = en ? Array.from(new Set([...mockStartup, f])) : mockStartup.filter(x => x !== f);
+    logs.push(`[PLDMGR] Startup ${en ? 'enabled' : 'disabled'}: ${f}`);
+  }
+  res.json({ ok: !!f });
+});
+
 app.get('/profile_run', (req, res) => {
   const id = req.query.id;
   const p = mockProfiles.find(x => x.id === id);
@@ -344,9 +362,17 @@ app.get('/manage\\:delete', (req, res) => {
   res.send('OK');
 });
 
+app.get('/manage\\:check', (req, res) => {
+  const filename = (req.query.filename || '').toLowerCase();
+  // Simulate: a different version of kstuff-lite is already installed.
+  const folderExists = filename.includes('kstuff-lite');
+  res.json({ status: 'ok', folder_exists: folderExists, file_exists: false, folder_name: 'kstuff-lite' });
+});
+
 app.post('/manage\\:upload', (req, res) => {
   const filename = req.query.filename;
-  logs.push(`[PLDMGR] Uploaded payload: ${filename}`);
+  const keep = req.query.keep === '1';
+  logs.push(`[PLDMGR] Uploaded payload: ${filename}${keep ? ' (keep both)' : ''}`);
   res.send('OK');
 });
 

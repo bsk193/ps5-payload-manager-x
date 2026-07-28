@@ -7,6 +7,7 @@
 
 #include <ctype.h>
 #include <dirent.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,7 +72,28 @@ static int copy_file(const char *src, const char *dst) {
 
 /* Remove all files in a payload directory EXCEPT the new incoming file.
  * Also updates the autoload config if a file is being replaced. */
+/* When set, installs/uploads keep any existing sibling versions in the payload
+ * folder instead of wiping them (lets multiple versions of the same base
+ * payload coexist). The route sets this just around a single install call.
+ *
+ * The daemon runs thread-per-connection, so the keep flag + the install it
+ * guards are serialized with a mutex to prevent two overlapping installs from
+ * racing the flag (which could wipe a version the user asked to keep). The
+ * route locks before setting keep and unlocks after clearing it; there are no
+ * early returns inside that window, so the unlock always runs. */
+static int g_keep_sibling_versions = 0;
+static pthread_mutex_t g_install_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void payload_mgr_install_lock(void)   { pthread_mutex_lock(&g_install_mutex); }
+void payload_mgr_install_unlock(void) { pthread_mutex_unlock(&g_install_mutex); }
+
+void payload_mgr_set_keep_versions(int keep) {
+    g_keep_sibling_versions = keep ? 1 : 0;
+}
+
 void payload_mgr_remove_old_files(const char *dir_path, const char *new_filename) {
+    if (g_keep_sibling_versions) return; /* keep-both: leave other versions in place */
+
     DIR *d = opendir(dir_path);
     if (!d) return;
 

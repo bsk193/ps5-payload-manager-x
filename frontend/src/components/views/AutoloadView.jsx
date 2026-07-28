@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { RefreshCw, ArrowLeft, ArrowRight, Activity, Zap, ChevronUp, ChevronDown, Trash2, CheckCircle2, Plus, Pencil, Play, Layers, ListChecks } from 'lucide-react'
-import { cn, isPS5, isSystemPayload } from '../../utils/helpers'
+import { cn, isPS5, isSystemPayload, payloadBaseName, fwCompatible } from '../../utils/helpers'
 import { useTranslation } from 'react-i18next'
 import PayloadName from '../ui/PayloadName'
 import Modal from '../ui/Modal'
@@ -10,9 +10,10 @@ const serialize = (profiles) => JSON.stringify(
   profiles.map(p => ({ id: p.id, name: p.name, enabled: !!p.enabled, list: p.list.join(',') }))
 )
 
-const AutoloadView = ({ payloads, profiles: incomingProfiles, payloadMeta = {}, onSaveProfiles, onRunProfile, onToast, onRedirect }) => {
+const AutoloadView = ({ payloads, profiles: incomingProfiles, payloadMeta = {}, consoleFw = '', onSaveProfiles, onRunProfile, onToast, onRedirect }) => {
   const { t } = useTranslation()
   const metaFor = (name) => payloadMeta?.[name] || {}
+  const fwBad = (name) => !fwCompatible(metaFor(name).min_fw, metaFor(name).max_fw, consoleFw)
 
   const [profiles, setProfiles] = useState([])
   const [editingId, setEditingId] = useState(null) // null = overview
@@ -92,6 +93,12 @@ const AutoloadView = ({ payloads, profiles: incomingProfiles, payloadMeta = {}, 
       onToast(t("autoload.conflict_kstuff", "Conflict: Multiple KStuff payloads detected."), 'error')
       return
     }
+    // Can't add two versions of the same payload to one profile.
+    const base = payloadBaseName(p)
+    if (editing.list.some(x => !x.startsWith('!') && payloadBaseName(x) === base)) {
+      onToast(t("autoload.conflict_duplicate", "This payload is already in the profile (another version of it)."), 'error')
+      return
+    }
     updateEditing(pr => ({ ...pr, list: [...pr.list, p] }))
     setSubView('list')
   }
@@ -156,7 +163,9 @@ const AutoloadView = ({ payloads, profiles: incomingProfiles, payloadMeta = {}, 
           {availablePayloads.map(p => {
             const isKstuff = p.toLowerCase().includes('kstuff')
             const hasKstuff = editing.list.some(x => x.toLowerCase().includes('kstuff'))
-            const isBlocked = isKstuff && hasKstuff
+            const base = payloadBaseName(p)
+            const hasSame = editing.list.some(x => !x.startsWith('!') && payloadBaseName(x) === base)
+            const isBlocked = (isKstuff && hasKstuff) || hasSame
             return (
               <button
                 key={p}
@@ -167,7 +176,7 @@ const AutoloadView = ({ payloads, profiles: incomingProfiles, payloadMeta = {}, 
                   isBlocked ? "opacity-40 cursor-not-allowed" : "bg-white/[0.03] hover:border-ps-blue group"
                 )}
               >
-                <PayloadName path={p} version={metaFor(p).version || null} minFw={metaFor(p).min_fw || null} maxFw={metaFor(p).max_fw || null} className={cn("text-xl", isBlocked ? "text-zinc-500" : "text-white")} stacked />
+                <PayloadName path={p} version={metaFor(p).version || null} minFw={metaFor(p).min_fw || null} maxFw={metaFor(p).max_fw || null} fwIncompatible={fwBad(p)} className={cn("text-xl", isBlocked ? "text-zinc-500" : "text-white")} stacked />
                 <ArrowRight className={cn("w-6 h-6 transition-all shrink-0 mt-1", isBlocked ? "text-zinc-800" : "text-zinc-500 group-hover:text-ps-blue group-hover:translate-x-2")} />
               </button>
             )
@@ -232,7 +241,7 @@ const AutoloadView = ({ payloads, profiles: incomingProfiles, payloadMeta = {}, 
                 <span className="text-gray-500 text-[12px] font-black">{i + 1}</span>
               </div>
               <div className="flex items-center min-w-0 pl-2">
-                <PayloadName path={p} version={metaFor(p).version || null} minFw={metaFor(p).min_fw || null} maxFw={metaFor(p).max_fw || null} className="text-white" stacked />
+                <PayloadName path={p} version={metaFor(p).version || null} minFw={metaFor(p).min_fw || null} maxFw={metaFor(p).max_fw || null} fwIncompatible={fwBad(p)} className="text-white" stacked />
               </div>
               <div className="flex items-center space-x-2">
                 <button onClick={() => moveUp(i)} disabled={i === 0} className="p-2 bg-white/10 text-zinc-400 hover:bg-ps-blue hover:text-white rounded-xl disabled:opacity-20">

@@ -103,6 +103,7 @@ struct UploadStatus {
     FILE *fp;
     size_t total_size;
     int error;
+    int keep;              /* keep-both: don't wipe other versions on install */
     char filename[256];
     char temp_path[512];
     char repo_url[512];
@@ -161,6 +162,10 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
             status->fp = NULL;
             status->total_size = 0;
             status->error = 0;
+            {
+                const char *keep_arg = MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "keep");
+                status->keep = (keep_arg && (keep_arg[0] == '1' || keep_arg[0] == 't')) ? 1 : 0;
+            }
 
             const char *filename =
                 MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "filename");
@@ -233,6 +238,10 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
             status->fp = NULL;
             status->total_size = 0;
             status->error = 0;
+            {
+                const char *keep_arg = MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "keep");
+                status->keep = (keep_arg && (keep_arg[0] == '1' || keep_arg[0] == 't')) ? 1 : 0;
+            }
             const char *filename =
                 MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "filename");
             if (filename && !strstr(filename, "/") && !strstr(filename, "..")) {
@@ -450,7 +459,12 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
 
                 if (!status->error) {
                     char msg[256];
-                    if (payload_mgr_import_to_storage(status->filename, status->temp_path, "web_upload", "", msg, sizeof(msg)) != 0) {
+                    payload_mgr_install_lock();
+                    payload_mgr_set_keep_versions(status->keep);
+                    int imp_rc = payload_mgr_import_to_storage(status->filename, status->temp_path, "web_upload", "", msg, sizeof(msg));
+                    payload_mgr_set_keep_versions(0);
+                    payload_mgr_install_unlock();
+                    if (imp_rc != 0) {
                         pldmgr_log("[PLDMGR] !!! Failed to commit upload: %s\n", msg);
                         status->error = 1;
                     }
@@ -496,9 +510,14 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
 
             char msg_buf[1024] = "";
             if (!err) {
-                if (repository_install_commit(
+                payload_mgr_install_lock();
+                payload_mgr_set_keep_versions(status->keep);
+                int commit_rc = repository_install_commit(
                         status->filename, status->temp_path, "repository", status->repo_url, msg_buf,
-                        sizeof(msg_buf)) != 0) {
+                        sizeof(msg_buf));
+                payload_mgr_set_keep_versions(0);
+                payload_mgr_install_unlock();
+                if (commit_rc != 0) {
                     err = 1;
                 }
             }
@@ -747,6 +766,11 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
 
         char msg_buf[1024] = "";
         int rc;
+        payload_mgr_install_lock();
+        {
+            const char *keep_arg = MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "keep");
+            payload_mgr_set_keep_versions((keep_arg && (keep_arg[0] == '1' || keep_arg[0] == 't')) ? 1 : 0);
+        }
         if (source_id && source_id[0]) {
             rc = sources_multi_repository_install(filename, source_id,
                                                   repo_url ? repo_url : "",
@@ -755,6 +779,8 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
             const char *detail = (repo_url && repo_url[0]) ? repo_url : REPOSITORY_SOURCE_URL;
             rc = repository_install_download(filename, detail, msg_buf, sizeof(msg_buf));
         }
+        payload_mgr_set_keep_versions(0);
+        payload_mgr_install_unlock();
         if (msg_buf[0] == '\0') {
             snprintf(msg_buf, sizeof(msg_buf), rc == 0 ? "Installed" : "Install failed");
         }
@@ -792,6 +818,29 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
         MHD_add_response_header(resp, "Content-Type", "application/json");
         add_cors_headers(resp);
         return MHD_queue_response(conn, rc == 0 ? MHD_HTTP_OK : MHD_HTTP_BAD_REQUEST, resp);
+    } else if (strcmp(url, ROUTE_STARTUP_GET) == 0) {
+        char *resp_buf;
+        struct MHD_Response *oom_resp = alloc_response_buffer(&resp_buf);
+        if (oom_resp)
+            return MHD_queue_response(conn, MHD_HTTP_INTERNAL_SERVER_ERROR, oom_resp);
+        pldmgr_startup_list_json(resp_buf, RESPONSE_BUFFER_SIZE);
+        resp = MHD_create_response_from_buffer(strlen(resp_buf), (void *)resp_buf, MHD_RESPMEM_MUST_FREE);
+        MHD_add_response_header(resp, "Content-Type", "application/json");
+    } else if (strcmp(url, ROUTE_STARTUP_TOGGLE) == 0) {
+        const char *filename = MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "filename");
+        const char *enabled_arg = MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "enabled");
+        int ok = 0;
+        if (filename && filename[0] && !strstr(filename, "/") && !strstr(filename, "..")) {
+            int enabled = (enabled_arg && (enabled_arg[0] == '1' || enabled_arg[0] == 't')) ? 1 : 0;
+            pldmgr_startup_set(filename, enabled);
+            ok = 1;
+        }
+        char json_resp[64];
+        snprintf(json_resp, sizeof(json_resp), "{\"ok\":%s}", ok ? "true" : "false");
+        resp = MHD_create_response_from_buffer(strlen(json_resp), (void *)json_resp, MHD_RESPMEM_MUST_COPY);
+        MHD_add_response_header(resp, "Content-Type", "application/json");
+        add_cors_headers(resp);
+        return MHD_queue_response(conn, ok ? MHD_HTTP_OK : MHD_HTTP_BAD_REQUEST, resp);
     } else if (strcmp(url, ROUTE_SOURCES_ADD) == 0) {
         const char *src_url = MHD_lookup_connection_value(conn, MHD_GET_ARGUMENT_KIND, "url");
         if (!src_url || !src_url[0]) {
@@ -917,6 +966,15 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
         resp = MHD_create_response_from_buffer(
             strlen(MENU_VERSION), (void *)MENU_VERSION, MHD_RESPMEM_PERSISTENT);
         MHD_add_response_header(resp, "Content-Type", "text/plain");
+    } else if (strcmp(url, ROUTE_SYSTEM_INFO) == 0) {
+        char fw[32] = "";
+        pldmgr_get_system_fw(fw, sizeof(fw));
+        char fw_esc[64];
+        pldmgr_json_escape(fw, fw_esc, sizeof(fw_esc));
+        char json_resp[128];
+        snprintf(json_resp, sizeof(json_resp), "{\"fw\":\"%s\"}", fw_esc);
+        resp = MHD_create_response_from_buffer(strlen(json_resp), (void *)json_resp, MHD_RESPMEM_MUST_COPY);
+        MHD_add_response_header(resp, "Content-Type", "application/json");
     } else if (strcmp(url, ROUTE_GETIP) == 0) {
         char ip[64];
         if (pldmgr_get_local_ip(ip, sizeof(ip)) != 0) {
@@ -932,21 +990,10 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
         int remaining = pldmgr_autoload_get_remaining_seconds();
         long long remaining_ms = pldmgr_autoload_get_remaining_ms();
 
+        /* The list to show is whatever phase is running (startup payloads, then
+         * the profile sequence), tracked by the autoload worker. */
         char list_buf[4096] = "";
-        FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "r");
-        if (f) {
-            char line[256];
-            int first = 1;
-            while (fgets(line, sizeof(line), f)) {
-                line[strcspn(line, "\r\n")] = 0;
-                if (strlen(line) == 0 || line[0] == '!')
-                    continue;
-                if (!first) strcat(list_buf, ",");
-                strcat(list_buf, line);
-                first = 0;
-            }
-            fclose(f);
-        }
+        pldmgr_autoload_get_list(list_buf, sizeof(list_buf));
 
         PldmgrConfig cfg;
         config_read(&cfg);

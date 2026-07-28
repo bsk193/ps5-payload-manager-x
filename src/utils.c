@@ -1,11 +1,37 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <ifaddrs.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include "utils.h"
+
+/* Best-effort console firmware read. Declared weak so that if the symbol is not
+ * available at link time it resolves to NULL instead of failing the build; we
+ * then simply report "unknown" and the UI degrades to display-only. The version
+ * value is BCD-encoded per byte (e.g. 0x07610000 -> "7.61", 0x10200000 -> "10.20").
+ * NOTE: needs on-hardware verification of the exact struct/encoding. */
+struct pldmgr_sw_version { size_t size; char str[0x24]; uint32_t value; };
+extern int sceKernelGetSystemSwVersion(struct pldmgr_sw_version *) __attribute__((weak));
+
+int pldmgr_get_system_fw(char *out, size_t out_size) {
+    if (out && out_size) out[0] = '\0';
+    if (!out || out_size < 8) return -1;
+    if (!sceKernelGetSystemSwVersion) return -1; /* symbol absent -> degrade */
+
+    struct pldmgr_sw_version v;
+    memset(&v, 0, sizeof(v));
+    v.size = sizeof(v);
+    if (sceKernelGetSystemSwVersion(&v) != 0) return -1;
+
+    unsigned maj = (v.value >> 24) & 0xFF;
+    unsigned min = (v.value >> 16) & 0xFF;
+    /* Each byte is BCD (nibble-per-digit): format in hex to reproduce the digits. */
+    snprintf(out, out_size, "%x.%02x", maj, min);
+    return 0;
+}
 
 int pldmgr_get_local_ip(char *ip_buf, size_t buf_size) {
     struct ifaddrs *ifaddr, *ifa;

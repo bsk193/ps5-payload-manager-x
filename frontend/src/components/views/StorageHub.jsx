@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { CloudDownload, Upload, Package, Database, RefreshCw, Trash2, Loader2, AlertTriangle, HardDrive, Usb, ChevronDown, Globe, Search } from 'lucide-react'
+import { CloudDownload, Upload, Package, Database, RefreshCw, Trash2, Loader2, AlertTriangle, HardDrive, Usb, ChevronDown, Globe, Search, Power } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { cn, isPS5, isIOS, parsePayloadName } from '../../utils/helpers'
+import { cn, isPS5, isIOS, parsePayloadName, fwCompatible } from '../../utils/helpers'
 import PayloadName from '../ui/PayloadName'
 
-const PayloadItem = ({ p, multiSources, isPS5, onInstall, srcId, srcUrl }) => {
+const PayloadItem = ({ p, multiSources, isPS5, onInstall, srcId, srcUrl, consoleFw }) => {
   const { t } = useTranslation()
   return (
   <div
@@ -18,7 +18,7 @@ const PayloadItem = ({ p, multiSources, isPS5, onInstall, srcId, srcUrl }) => {
     )}
   >
     <div className="space-y-2 min-w-0">
-      <PayloadName path={p.filename} version={p.version} minFw={p.min_fw} maxFw={p.max_fw} className="text-xl md:text-2xl text-white" stacked lastUpdate={p.last_update} />
+      <PayloadName path={p.filename} version={p.version} minFw={p.min_fw} maxFw={p.max_fw} fwIncompatible={!fwCompatible(p.min_fw, p.max_fw, consoleFw)} className="text-xl md:text-2xl text-white" stacked lastUpdate={p.last_update} />
       {p.description && (
         <p className="text-sm md:text-base text-zinc-400 font-medium leading-relaxed">{p.description}</p>
       )}
@@ -40,7 +40,7 @@ const PayloadItem = ({ p, multiSources, isPS5, onInstall, srcId, srcUrl }) => {
 )
 }
 
-const CategoryGroup = ({ category, payloads, multiSources, isPS5, onInstall, srcId, srcUrl, defaultExpanded = false }) => {
+const CategoryGroup = ({ category, payloads, multiSources, isPS5, onInstall, srcId, srcUrl, consoleFw, defaultExpanded = false }) => {
   const [expanded, setExpanded] = useState(defaultExpanded)
   return (
     <div className="border-b border-white/5 last:border-0">
@@ -57,14 +57,15 @@ const CategoryGroup = ({ category, payloads, multiSources, isPS5, onInstall, src
           "border-t border-white/5"
         )}>
           {payloads.map(p => (
-            <PayloadItem 
-              key={p.filename} 
-              p={p} 
-              multiSources={multiSources} 
-              isPS5={isPS5} 
-              onInstall={onInstall} 
-              srcId={srcId} 
-              srcUrl={srcUrl} 
+            <PayloadItem
+              key={p.filename}
+              p={p}
+              multiSources={multiSources}
+              isPS5={isPS5}
+              onInstall={onInstall}
+              srcId={srcId}
+              srcUrl={srcUrl}
+              consoleFw={consoleFw}
             />
           ))}
         </div>
@@ -73,7 +74,7 @@ const CategoryGroup = ({ category, payloads, multiSources, isPS5, onInstall, src
   )
 }
 
-const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onImportFromUsb, config, ip, scrollTarget, onClearScrollTarget }) => {
+const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onImportFromUsb, config, ip, consoleFw = '', startupSet = [], onToggleStartup, scrollTarget, onClearScrollTarget }) => {
   const { t, i18n } = useTranslation()
   const multiSources = config?.MULTI_SOURCES_ENABLED === true
 
@@ -244,7 +245,7 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
                         <Package className="w-6 h-6 md:w-8 md:h-8 text-zinc-400 group-hover:text-ps-blue transition-colors" />
                       </div>
                       <div className="min-w-0 flex-1 space-y-1">
-                        <PayloadName path={fileName} version={meta?.version || null} minFw={meta?.min_fw || null} maxFw={meta?.max_fw || null} className="text-xl md:text-2xl text-white" stacked />
+                        <PayloadName path={fileName} version={meta?.version || null} minFw={meta?.min_fw || null} maxFw={meta?.max_fw || null} fwIncompatible={!fwCompatible(meta?.min_fw, meta?.max_fw, consoleFw)} className="text-xl md:text-2xl text-white" stacked />
                         {sourceBadge && (
                           <div className="flex items-center gap-1 text-zinc-500 text-[11px] select-none font-medium">
                             <Globe className="w-3.5 h-3.5" />
@@ -253,7 +254,20 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center shrink-0">
+                    <div className="flex items-center shrink-0 gap-2">
+                      <button
+                        onClick={() => onToggleStartup && onToggleStartup(fileName, !startupSet.includes(fileName))}
+                        title={t("storage_hub.startup_toggle", "Run on every startup (independent of autoload profiles)")}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-3 md:px-4 md:py-4 rounded-xl border transition-all",
+                          startupSet.includes(fileName)
+                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/40"
+                            : "bg-white/5 text-zinc-400 border-white/10 hover:text-white hover:border-white/20"
+                        )}
+                      >
+                        <Power className="w-5 h-5 md:w-6 md:h-6" />
+                        <span className="text-[11px] md:text-xs font-black uppercase tracking-tight hidden sm:inline">{t("storage_hub.startup", "Startup")}</span>
+                      </button>
                       <button
                         onClick={() => onDelete(fileName)}
                         className="p-3 md:p-4 rounded-xl bg-red-950/20 text-red-500 border border-red-500/10 hover:bg-red-500 hover:text-white transition-all"
@@ -464,19 +478,21 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
                             onInstall={onInstall}
                             srcId={src.id}
                             srcUrl={src.url}
+                            consoleFw={consoleFw}
                             defaultExpanded={availablePayloads.length <= 10}
                           />
                         ))
                       ) : (
                         availablePayloads.map(p => (
-                          <PayloadItem 
-                            key={p.filename} 
-                            p={p} 
-                            multiSources={multiSources} 
-                            isPS5={isPS5} 
-                            onInstall={onInstall} 
-                            srcId={src.id} 
-                            srcUrl={src.url} 
+                          <PayloadItem
+                            key={p.filename}
+                            p={p}
+                            multiSources={multiSources}
+                            isPS5={isPS5}
+                            onInstall={onInstall}
+                            srcId={src.id}
+                            srcUrl={src.url}
+                            consoleFw={consoleFw}
                           />
                         ))
                       )}

@@ -85,38 +85,6 @@ static int parse_profiles(const char *json, ProfileEntry *out, int *count) {
     return 0;
 }
 
-/* ── Legacy migration ──────────────────────────────────────── */
-
-/* Build a single "Default" profile from the legacy autoload.txt, if present. */
-static int migrate_from_legacy(ProfileEntry *out, int *count) {
-    *count = 0;
-    memset(out, 0, sizeof(ProfileEntry) * MAX_PROFILES);
-
-    FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "r");
-    if (!f) return 0; /* nothing to migrate */
-
-    char list[PROFILE_LIST_MAX] = "";
-    char line[256];
-    int first = 1;
-    while (fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\r\n")] = 0;
-        if (line[0] == '\0') continue;
-        if (!first) strncat(list, ",", sizeof(list) - strlen(list) - 1);
-        strncat(list, line, sizeof(list) - strlen(list) - 1);
-        first = 0;
-    }
-    fclose(f);
-
-    if (list[0] == '\0') return 0; /* empty legacy sequence -> no profile */
-
-    strcpy(out[0].id, "default");
-    strcpy(out[0].name, "Default");
-    out[0].enabled = config_read_bool("AUTOLOAD_ENABLED", 0);
-    strncpy(out[0].list, list, sizeof(out[0].list) - 1);
-    *count = 1;
-    return 1;
-}
-
 /* ── Serialize ─────────────────────────────────────────────── */
 
 static int build_json(const ProfileEntry *arr, int count, char *buf, size_t size) {
@@ -164,14 +132,10 @@ int profiles_load(ProfileEntry *out, int *count) {
     }
     if (json) free(json);
 
-    /* No profiles file yet: attempt a one-time migration from autoload.txt,
-     * then persist so this branch never runs again. */
-    if (migrate_from_legacy(out, count)) {
-        save_profiles(out, *count);
-    } else {
-        *count = 0;
-        save_profiles(out, 0); /* write empty document so state is stable */
-    }
+    /* No profiles file yet: start empty and persist so this branch never runs
+     * again. (autoload.txt is the startup-payload list, not a legacy profile.) */
+    *count = 0;
+    save_profiles(out, 0);
     return 0;
 }
 
@@ -212,7 +176,7 @@ int profiles_find_by_id(const ProfileEntry *arr, int count, const char *id) {
 
 int profiles_write_sequence(const char *list) {
     ensure_dir_recursive(BASE_DATA_DIR);
-    FILE *f = fopen(AUTOLOAD_CONFIG_PATH, "w");
+    FILE *f = fopen(PROFILE_SCRATCH_PATH, "w");
     if (!f) return -1;
 
     /* Copy so strtok can mutate. */

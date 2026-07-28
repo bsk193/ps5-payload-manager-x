@@ -26,4 +26,14 @@ int payload_mgr_usb_move(const char *usb_path, int overwrite, int keep_original,
 /* Internal utility — exposed for use by repository.c and sources.c */
 void payload_mgr_remove_old_files(const char *dir_path, const char *new_filename);
 
+/* Toggle keep-both mode: when set, the next install/upload keeps existing
+ * sibling versions instead of wiping them. Set it right before an install call
+ * and clear it right after, inside the install lock below. */
+void payload_mgr_set_keep_versions(int keep);
+
+/* Serialize install operations so the keep-both flag can't be raced across
+ * threads. Lock before set_keep_versions(keep); unlock after set_keep_versions(0). */
+void payload_mgr_install_lock(void);
+void payload_mgr_install_unlock(void);
+
 #endif

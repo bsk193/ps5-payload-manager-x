@@ -33,6 +33,45 @@ export const parsePayloadName = (path) => {
   };
 };
 
+// Version-stripped identity of a payload, mirroring the C
+// pldmgr_utils_get_payload_folder_name(): strip extension, a _v/-v (or _/- + digit)
+// version marker, and any -ps4/-ps5 suffix. Used to prevent launching/adding two
+// versions of the same payload.
+export const payloadBaseName = (filename) => {
+  if (!filename) return '';
+  let clean = filename.split('/').pop();
+  const dot = clean.lastIndexOf('.');
+  if (dot > 0) clean = clean.slice(0, dot);
+  let idx = clean.indexOf('_v');
+  if (idx < 0) idx = clean.indexOf('-v');
+  if (idx >= 0) {
+    clean = clean.slice(0, idx);
+  } else {
+    const m = clean.match(/[_-]\d/);
+    if (m) clean = clean.slice(0, m.index);
+  }
+  clean = clean.replace(/[_-]ps[45].*$/i, '');
+  return clean.toLowerCase();
+};
+
+// Parse a firmware string like "7.61" or "10.20" to a comparable number.
+export const parseFw = (s) => {
+  if (!s) return null;
+  const n = parseFloat(String(s).replace(/[^0-9.]/g, ''));
+  return isNaN(n) ? null : n;
+};
+
+// True if the console FW falls within [minFw, maxFw]. When the console FW is
+// unknown (null/empty), returns true so nothing is grayed out (display-only).
+export const fwCompatible = (minFw, maxFw, consoleFw) => {
+  const c = parseFw(consoleFw);
+  if (c === null) return true;
+  const mn = parseFw(minFw), mx = parseFw(maxFw);
+  if (mn !== null && c < mn) return false;
+  if (mx !== null && c > mx) return false;
+  return true;
+};
+
 export const isSystemPayload = (filename) => {
   if (!filename) return false;
   const name = filename.split('/').pop().toLowerCase();

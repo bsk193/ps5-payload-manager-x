@@ -37,6 +37,9 @@ export default defineConfig({
       '/profiles_get': { target: 'http://127.0.0.1:8081', changeOrigin: true },
       '/profiles_set': { target: 'http://127.0.0.1:8081', changeOrigin: true },
       '/profile_run': { target: 'http://127.0.0.1:8081', changeOrigin: true },
+      '/startup_get': { target: 'http://127.0.0.1:8081', changeOrigin: true },
+      '/startup_toggle': { target: 'http://127.0.0.1:8081', changeOrigin: true },
+      '/system_info': { target: 'http://127.0.0.1:8081', changeOrigin: true },
       '/events': {
         target: 'http://127.0.0.1:8081',
         changeOrigin: true,

@@ -1,6 +1,8 @@
 #pragma once
 
-/* 
+#include <stddef.h>
+
+/*
  * Start the autoload sequence in a background thread.
  * Returns 0 on success, -1 on failure.
  */
@@ -21,3 +23,13 @@ int pldmgr_autoload_is_picker();
  * profile is enabled. Used when the user picks one from the startup selection.
  * Returns 0 on success, -1 if the profile id is unknown. */
 int pldmgr_autoload_run_profile(const char *id);
+
+/* Comma-separated list of payloads for the overlay's current phase. */
+void pldmgr_autoload_get_list(char *buf, size_t size);
+
+/* ── Startup payloads (always-run list, stored in autoload.txt) ──────────────
+ * Separate from autoload profiles: these payloads launch on every boot
+ * regardless of the active/selected profile. */
+int pldmgr_startup_is_enabled(const char *filename);
+void pldmgr_startup_set(const char *filename, int enabled);
+int pldmgr_startup_list_json(char *buf, size_t size);

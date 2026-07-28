@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next'
 import './App.css'
 
 // Utilities
-import { cn, isPS5, isSystemPayload } from './utils/helpers'
+import { cn, isPS5, isSystemPayload, fwCompatible } from './utils/helpers'
 
 // UI Components
 import Toast from './components/ui/Toast'
@@ -66,7 +66,9 @@ function App() {
   const [payloads, setPayloads] = useState([])
   const [config, setConfig] = useState({})
   const [profiles, setProfiles] = useState([])
+  const [startupSet, setStartupSet] = useState([])
   const [ip, setIp] = useState('0.0.0.0')
+  const [consoleFw, setConsoleFw] = useState('')
   const [version, setVersion] = useState('Loading...')
   const [loading, setLoading] = useState(false)
   const [activeLoadingName, setActiveLoadingName] = useState('')
@@ -205,6 +207,22 @@ function App() {
     }
   }
 
+  const refreshStartup = async () => {
+    const data = await api('/startup_get')
+    if (data?.startup && Array.isArray(data.startup)) setStartupSet(data.startup)
+  }
+
+  const toggleStartup = async (filename, enabled) => {
+    // Optimistic update, then persist.
+    setStartupSet(prev => enabled ? Array.from(new Set([...prev, filename])) : prev.filter(f => f !== filename))
+    try {
+      await fetch(`/startup_toggle?filename=${encodeURIComponent(filename)}&enabled=${enabled ? 1 : 0}`)
+    } catch (e) {
+      addToast(t("app.toasts.save_failed", "Save failed"), "error")
+      refreshStartup()
+    }
+  }
+
   const saveProfiles = async (newProfiles) => {
     const payload = {
       profiles: newProfiles.map(p => ({
@@ -311,28 +329,38 @@ function App() {
     try {
       const res = await fetch(`/manage:check?filename=${encodeURIComponent(file.name)}`)
       const data = await res.json()
-      if (data.file_exists || data.folder_exists) {
+      if (data.file_exists) {
+        // Same version already present: overwrite just this file, keep other versions.
         setConfirmModal({
           show: true,
           title: t("app.modals.overwrite.title", "Overwrite Payload"),
-          message: data.file_exists
-            ? t("app.modals.overwrite.file_exists", "The file {{fileName}} already exists. Overwrite it?", { fileName: file.name })
-            : t("app.modals.overwrite.folder_exists", "A different version of this payload exists in the \"{{folderName}}\" folder. Overwrite it?", { folderName: data.folder_name }),
-          onConfirm: () => performUpload(file)
+          message: t("app.modals.overwrite.file_exists", "The file {{fileName}} already exists. Overwrite it?", { fileName: file.name }),
+          onConfirm: () => performUpload(file, true)
+        })
+      } else if (data.folder_exists) {
+        // A different version is installed: let the user keep both or replace all.
+        setConfirmModal({
+          show: true,
+          title: t("app.modals.version.title", "Existing Version Found"),
+          message: t("app.modals.version.message", "A different version of this payload is already installed. Keep both versions, or replace the existing one?"),
+          confirmLabel: t("app.modals.version.keep_both", "Keep Both"),
+          onConfirm: () => performUpload(file, true),
+          altLabel: t("app.modals.version.replace", "Replace"),
+          onAlt: () => performUpload(file, false)
         })
       } else {
-        performUpload(file)
+        performUpload(file, false)
       }
     } catch (err) {
-      performUpload(file)
+      performUpload(file, false)
     }
   }
 
-  const performUpload = async (file) => {
+  const performUpload = async (file, keep = false) => {
     setConfirmModal({ show: false })
     setDownloadModal({ show: true, name: file.name, progress: 20 })
     try {
-      const res = await fetch(`/manage:upload?filename=${encodeURIComponent(file.name)}`, {
+      const res = await fetch(`/manage:upload?filename=${encodeURIComponent(file.name)}${keep ? '&keep=1' : ''}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: file
@@ -346,19 +374,31 @@ function App() {
   }
 
   const handleInstall = async (p, sourceId, repoUrl) => {
-    if (p.isUpdate || p.isInstalled) {
+    if (p.isInstalled) {
+      // Exact same version already installed: reinstall it, keep other versions.
       setConfirmModal({
         show: true,
-        title: p.isUpdate ? t("app.modals.reinstall.update_title", "Update Payload") : t("app.modals.reinstall.reinstall_title", "Reinstall Payload"),
+        title: t("app.modals.reinstall.reinstall_title", "Reinstall Payload"),
         message: t("app.modals.reinstall.message", "A version of {{name}} is already installed. Do you want to replace it with the repository version?", { name: p.name || p.filename }),
-        onConfirm: () => performInstall(p, sourceId, repoUrl)
+        onConfirm: () => performInstall(p, sourceId, repoUrl, true)
+      })
+    } else if (p.isUpdate) {
+      // A different version is installed: keep both or replace the old one.
+      setConfirmModal({
+        show: true,
+        title: t("app.modals.version.title", "Existing Version Found"),
+        message: t("app.modals.version.message_repo", "A different version of {{name}} is already installed. Keep both versions, or replace the existing one?", { name: p.name || p.filename }),
+        confirmLabel: t("app.modals.version.keep_both", "Keep Both"),
+        onConfirm: () => performInstall(p, sourceId, repoUrl, true),
+        altLabel: t("app.modals.version.replace", "Replace"),
+        onAlt: () => performInstall(p, sourceId, repoUrl, false)
       })
     } else {
-      performInstall(p, sourceId, repoUrl)
+      performInstall(p, sourceId, repoUrl, false)
     }
   }
 
-  const performInstall = async (p, sourceId, repoUrl) => {
+  const performInstall = async (p, sourceId, repoUrl, keep = false) => {
     setConfirmModal({ show: false })
     setDownloadModal({ show: true, name: p.filename, progress: 10 })
     try {
@@ -366,6 +406,7 @@ function App() {
       let url = `/repository_install?filename=${encodeURIComponent(p.filename)}`
       if (sourceId) url += `&source_id=${encodeURIComponent(sourceId)}`
       if (repoUrl) url += `&repo_url=${encodeURIComponent(repoUrl)}`
+      if (keep) url += `&keep=1`
       const res = await fetch(url)
       setDownloadModal(prev => ({ ...prev, progress: 80 }))
 
@@ -425,7 +466,9 @@ function App() {
         refreshPayloads()
         refreshConfig()
         refreshProfiles()
+        refreshStartup()
         refreshHistory()
+        api('/system_info').then(d => { if (d?.fw) setConsoleFw(d.fw) }).catch(() => { })
       }
     }
     init()
@@ -438,6 +481,9 @@ function App() {
     if (view === 'autoload' || view === 'storage') {
       refreshConfig()
       refreshPayloads()
+    }
+    if (view === 'storage') {
+      refreshStartup()
     }
     if (view === 'autoload') {
       refreshProfiles()
@@ -533,7 +579,10 @@ function App() {
         footer={
           <>
             <button onClick={() => setConfirmModal({ show: false })} className="flex-1 px-8 py-5 rounded-2xl bg-white/5 hover:bg-white/10 text-white font-bold transition-all uppercase tracking-tight">{t("app.buttons.cancel", "Cancel")}</button>
-            <button onClick={confirmModal.onConfirm} className="flex-1 px-8 py-5 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-bold transition-all uppercase tracking-tight">{t("app.buttons.confirm", "Confirm")}</button>
+            {confirmModal.onAlt && (
+              <button onClick={confirmModal.onAlt} className="flex-1 px-8 py-5 rounded-2xl bg-red-600/80 hover:bg-red-500 text-white font-bold transition-all uppercase tracking-tight">{confirmModal.altLabel || t("app.buttons.confirm", "Confirm")}</button>
+            )}
+            <button onClick={confirmModal.onConfirm} className={cn("flex-1 px-8 py-5 rounded-2xl text-white font-bold transition-all uppercase tracking-tight", confirmModal.onAlt ? "bg-ps-blue hover:bg-ps-blue/80" : "bg-red-600 hover:bg-red-500")}>{confirmModal.confirmLabel || t("app.buttons.confirm", "Confirm")}</button>
           </>
         }
       >
@@ -637,6 +686,7 @@ function App() {
                 version={payloadMeta[p.split('/').pop()]?.version || null}
                 minFw={payloadMeta[p.split('/').pop()]?.min_fw || null}
                 maxFw={payloadMeta[p.split('/').pop()]?.max_fw || null}
+                fwIncompatible={!fwCompatible(payloadMeta[p.split('/').pop()]?.min_fw, payloadMeta[p.split('/').pop()]?.max_fw, consoleFw)}
                 isFavorite={favoritePayloads.includes(p)}
                 isLaunched={launchHistory.includes(p)}
                 isEditMode={isFavoriteEditMode}
@@ -732,6 +782,9 @@ function App() {
               onImportFromUsb={handleImportFromUsb}
               config={config}
               ip={ip}
+              consoleFw={consoleFw}
+              startupSet={startupSet}
+              onToggleStartup={toggleStartup}
               scrollTarget={storageScrollTarget}
               onClearScrollTarget={() => setStorageScrollTarget(null)}
             />
@@ -755,6 +808,7 @@ function App() {
               payloads={payloads}
               profiles={profiles}
               payloadMeta={payloadMeta}
+              consoleFw={consoleFw}
               onSaveProfiles={saveProfiles}
               onRunProfile={handleRunProfile}
               onToast={addToast}

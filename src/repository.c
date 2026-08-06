@@ -644,10 +644,26 @@ static int compare_versions(const char *v1, const char *v2) {
 
     int pat1 = parse_version_part(&p1);
     int pat2 = parse_version_part(&p2);
+    if (pat1 != pat2) return pat1 - pat2;
 
-    int res = pat1 - pat2;
+    /* Fourth part: our X versions are 4-part (e.g. 0.5.1.0x), so updates that
+     * differ only in the last component (0.5.0.1x -> 0.5.0.2x) must compare. */
+    int bld1 = parse_version_part(&p1);
+    int bld2 = parse_version_part(&p2);
+
+    int res = bld1 - bld2;
     pldmgr_log("[PLDMGR] Comparing versions: %s vs %s -> %d\n", v1, v2, res);
     return res;
+}
+
+/* Recognize the manager's own folder/ELF by name across stock and X naming:
+ * "pldmgr"/"pldmgrx", "payload-manager", "Payload_Manager_X", etc. Without this,
+ * a renamed X build installed from the Cloud Hub is never detected as an update. */
+static int is_manager_name(const char *name) {
+    if (!name) return 0;
+    if (strcasestr(name, "pldmgr")) return 1;
+    if (strcasestr(name, "payload") && strcasestr(name, "manager")) return 1;
+    return 0;
 }
 
 int repository_check_self_update(char *out_path, size_t out_size) {
@@ -659,7 +675,7 @@ int repository_check_self_update(char *out_path, size_t out_size) {
         if (entry->d_name[0] == '.') continue;
 
         /* Check for pldmgr or payload-manager directory (case-insensitive) */
-        if (strcasecmp(entry->d_name, "pldmgr") == 0 || strcasecmp(entry->d_name, "payload-manager") == 0) {
+        if (is_manager_name(entry->d_name)) {
             char subdir_path[512];
             snprintf(subdir_path, sizeof(subdir_path), "%s/%s", PAYLOADS_STORAGE_DIR, entry->d_name);
 
@@ -673,7 +689,7 @@ int repository_check_self_update(char *out_path, size_t out_size) {
 
                         /* Look for .elf or .bin files that match our name */
                         if (strstr(sentry->d_name, ".elf") || strstr(sentry->d_name, ".bin")) {
-                            if (strcasestr(sentry->d_name, "pldmgr") || strcasestr(sentry->d_name, "payload-manager")) {
+                            if (is_manager_name(sentry->d_name)) {
                                 char full_path[512];
                                 snprintf(full_path, sizeof(full_path), "%s/%s", subdir_path, sentry->d_name);
 

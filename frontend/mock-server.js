@@ -33,7 +33,7 @@ const remoteRepository = [
   {
     name: "KStuff Lite",
     filename: "kstuff-lite_v1.09.elf",
-    url: "https://bsk193.github.io/ps5-payloads-mirror/payloads/kstuff-lite_v1.09.elf",
+    url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff-lite_v1.09.elf",
     description: "Lite version of kstuff (latest)",
     version: "v1.09",
     min_fw: "1.00",
@@ -43,7 +43,7 @@ const remoteRepository = [
   {
     name: "KStuff Lite",
     filename: "kstuff-lite_v1.06.elf",
-    url: "https://bsk193.github.io/ps5-payloads-mirror/payloads/kstuff-lite_v1.06.elf",
+    url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff-lite_v1.06.elf",
     description: "Lite version of kstuff (older FW)",
     version: "v1.06",
     min_fw: "1.00",
@@ -72,7 +72,7 @@ const communityRepository = [
 let lastRepositoryUpdate = Math.floor(Date.now() / 1000);
 
 let mockSources = [
-  { id: 'default', name: 'Official Repository', url: 'https://bsk193.github.io/ps5-payloads-mirror/payloads.json', removable: false },
+  { id: 'default', name: 'Official Repository', url: 'https://bsk193.github.io/console-homebrew-hub/payloads.json', removable: false },
   { id: 'source_community', name: 'Community Payloads', url: 'https://example.com/community-payloads.json', removable: true }
 ];
 

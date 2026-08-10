@@ -71,7 +71,7 @@
 #define ROUTE_PROCESS_KILL "/process_kill"
 #define ROUTE_HISTORY_LIST "/history_list"
 
-#define MENU_VERSION "0.5.1.0x"
+#define MENU_VERSION "0.5.1.1x"
 /* autoload.txt is the persistent "startup payloads" list (always run on boot,
  * pldmgr-style, toggled per-payload in Manage Payloads). The active/selected
  * profile sequence is resolved into a separate scratch file. */
@@ -83,7 +83,7 @@
 #define REPOSITORY_CACHE_PATH PLDMGR_DATA_ROOT "/repository_cache.json"
 #define PAYLOADS_STORAGE_DIR PLDMGR_DATA_ROOT "/payloads"
 #define REPOSITORY_SOURCE_URL                                                  \
-  "https://bsk193.github.io/ps5-payloads-mirror/payloads.json"
+  "https://bsk193.github.io/console-homebrew-hub/payloads.json"
 #define REPOSITORY_REFRESH_INTERVAL_SEC 86400
 
 /* Logging (implementation in log_server.c) */

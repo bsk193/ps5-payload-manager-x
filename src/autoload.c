@@ -95,8 +95,11 @@ static void set_run_list_from_file(const char *path) {
 }
 
 /* Launch every payload in a newline sequence file, honouring "!ms" delays and
- * skipping any payload whose base identity was already launched this boot. */
-static void run_sequence_file(const char *path) {
+ * skipping any payload whose base identity was already launched this boot. When
+ * silent != 0 the overlay status (current name, done count) is NOT touched — used
+ * for startup payloads, which launch in the background and must not appear as an
+ * autoload "sequence" (they can disrupt the manager before the picker shows). */
+static void run_sequence_file(const char *path, int silent) {
     FILE *f = fopen(path, "r");
     if (!f) return;
     char line[256];
@@ -117,21 +120,21 @@ static void run_sequence_file(const char *path) {
         pldmgr_utils_get_payload_folder_name(line, base, sizeof(base));
         if (launched_has(base)) {
             pldmgr_log("[Autoload] Skipping duplicate payload: %s (already launched)\n", line);
-            autoload_done_count++;
+            if (!silent) autoload_done_count++;
             continue;
         }
 
         char full_path[512];
         if (payload_mgr_resolve_path(line, full_path, sizeof(full_path)) == 0) {
-            strncpy(autoload_current_name, line, sizeof(autoload_current_name) - 1);
-            pldmgr_log("[Autoload] Launching: %s\n", full_path);
+            if (!silent) strncpy(autoload_current_name, line, sizeof(autoload_current_name) - 1);
+            pldmgr_log("[Autoload] Launching%s: %s\n", silent ? " (startup)" : "", full_path);
             ps5_launch_elf(full_path);
             launched_add(base);
-            autoload_done_count++;
-            usleep(500000); /* UI visibility */
+            if (!silent) autoload_done_count++;
+            usleep(500000); /* UI visibility / launch spacing */
         } else {
             pldmgr_log("[Autoload] !!! Payload not found: %s\n", line);
-            autoload_done_count++;
+            if (!silent) autoload_done_count++;
         }
     }
     fclose(f);
@@ -257,7 +260,7 @@ void* pldmgr_autoload_worker(void* arg) {
         remaining_seconds = 0;
         is_executing = 1;
         set_run_list_from_file(PROFILE_SCRATCH_PATH);
-        run_sequence_file(PROFILE_SCRATCH_PATH);
+        run_sequence_file(PROFILE_SCRATCH_PATH, 0);
         strcpy(autoload_current_name, "DONE");
         remaining_seconds = 0;
         is_executing = 0;
@@ -271,6 +274,9 @@ void* pldmgr_autoload_worker(void* arg) {
     autoload_total_count = 0;
     autoload_done_count = 0;
     autoload_current_name[0] = '\0';
+    remaining_seconds = -1;
+    is_executing = 0;
+    countdown_end_time = 0;
 
     /* Wait briefly for the frontend so the overlay is ready to show progress. */
     if (browser_open) {
@@ -281,17 +287,13 @@ void* pldmgr_autoload_worker(void* arg) {
         }
     }
 
-    /* Phase 1: startup payloads — always run, no countdown, no abort. */
+    /* Phase 1: startup payloads — launch silently in the background. They run
+     * before the profile/picker and can disrupt the manager, so they are NOT
+     * shown as an autoload sequence (that froze the overlay on a phantom list).
+     * Dedup still applies via launched_bases. */
     if (stat(STARTUP_LIST_PATH, &st) == 0) {
-        set_run_list_from_file(STARTUP_LIST_PATH);
-        if (autoload_total_count > 0) {
-            pldmgr_log("[Autoload] Running %d startup payload(s)...\n", autoload_total_count);
-            is_executing = 1;
-            remaining_seconds = 0;
-            countdown_end_time = 0;
-            run_sequence_file(STARTUP_LIST_PATH);
-            is_executing = 0;
-        }
+        pldmgr_log("[Autoload] Launching startup payloads (background)...\n");
+        run_sequence_file(STARTUP_LIST_PATH, 1);
     }
 
     /* Phase 2: resolve the active profile (or fall through to picker/dashboard). */
@@ -310,11 +312,15 @@ void* pldmgr_autoload_worker(void* arg) {
                 pldmgr_log("[Autoload] No profiles configured - booting to dashboard.\n");
             }
             free(arr);
-            /* Startup payloads (if any) already ran; clear the overlay so the
-             * picker (or dashboard) takes over. */
+            /* Fully clear the overlay state so the picker (or dashboard) shows
+             * cleanly with no leftover sequence. */
             is_executing = 0;
             remaining_seconds = -1;
             countdown_end_time = 0;
+            autoload_run_list[0] = '\0';
+            autoload_current_name[0] = '\0';
+            autoload_total_count = 0;
+            autoload_done_count = 0;
             return NULL;
         }
 
@@ -395,7 +401,7 @@ void* pldmgr_autoload_worker(void* arg) {
 
     is_executing = 1;
     pldmgr_log("[Autoload] Starting profile sequence...\n");
-    run_sequence_file(PROFILE_SCRATCH_PATH);
+    run_sequence_file(PROFILE_SCRATCH_PATH, 0);
 
     pldmgr_log("[Autoload] Sequence complete.\n");
     strcpy(autoload_current_name, "DONE");

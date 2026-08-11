@@ -499,14 +499,14 @@ function App() {
           const data = await res.json()
           setAutoloadStatus(data)
 
-          // Poll as long as autoload is active (remaining >= 0, including DONE),
-          // or while the startup picker is showing (so we catch the transition
-          // into the running sequence quickly once a profile is selected).
+          // Keep polling. When autoload is active (running/countdown/DONE) or the
+          // picker is showing, poll fast. When idle, keep polling at a slower
+          // rate — the boot worker may set the picker/autoload state a moment
+          // after the page opens (e.g. while startup payloads launch), and if we
+          // stopped polling we'd miss it until a manual reload.
           const isActive = data && (data.remaining >= 0 || data.picker)
-          if (isActive) {
-            const delay = data.remaining > 0 ? 600 : 500
-            statusTimeout = setTimeout(poll, delay)
-          }
+          const delay = (data && data.remaining > 0) ? 600 : (isActive ? 500 : 2000)
+          statusTimeout = setTimeout(poll, delay)
           return
         }
       } catch (e) { }

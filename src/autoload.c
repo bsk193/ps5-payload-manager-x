@@ -278,7 +278,34 @@ void* pldmgr_autoload_worker(void* arg) {
     is_executing = 0;
     countdown_end_time = 0;
 
-    /* Wait briefly for the frontend so the overlay is ready to show progress. */
+    /* Resolve the profile state UP FRONT so picker_active is set BEFORE we launch
+     * startup payloads. Startup payloads launch silently (idle overlay), and the
+     * frontend's status poll stops when it sees an idle state — so if the picker
+     * flag were set only afterwards, the poll would already have stopped and the
+     * selection screen would never appear. */
+    char active_list[PROFILE_LIST_MAX] = "";
+    int has_active = 0;
+    {
+        ProfileEntry *arr = calloc(MAX_PROFILES, sizeof(ProfileEntry));
+        if (!arr) return NULL;
+        int count = 0;
+        profiles_load(arr, &count);
+        int active = profiles_active_index(arr, count);
+        if (active >= 0) {
+            has_active = 1;
+            strncpy(active_list, arr[active].list, sizeof(active_list) - 1);
+            active_list[sizeof(active_list) - 1] = '\0';
+            pldmgr_log("[Autoload] Enabled profile: %s\n", arr[active].name);
+        } else if (count > 0) {
+            picker_active = 1; /* set before startup launch so the poll stays alive */
+            pldmgr_log("[Autoload] No enabled profile - will show startup picker (%d profiles).\n", count);
+        } else {
+            pldmgr_log("[Autoload] No profiles configured - booting to dashboard.\n");
+        }
+        free(arr);
+    }
+
+    /* Wait briefly for the frontend so the overlay/picker is ready. */
     if (browser_open) {
         pldmgr_log("[Autoload] Browser Mode: Waiting for frontend connection...\n");
         int wait_timeout = 50; /* 50 * 100ms = 5 seconds */
@@ -287,8 +314,7 @@ void* pldmgr_autoload_worker(void* arg) {
         }
     }
 
-    /* Phase 1: startup payloads — launch silently in the background. They run
-     * before the profile/picker and can disrupt the manager, so they are NOT
+    /* Phase 1: startup payloads — launch silently in the background. They are NOT
      * shown as an autoload sequence (that froze the overlay on a phantom list).
      * Dedup still applies via launched_bases. */
     if (stat(STARTUP_LIST_PATH, &st) == 0) {
@@ -296,39 +322,20 @@ void* pldmgr_autoload_worker(void* arg) {
         run_sequence_file(STARTUP_LIST_PATH, 1);
     }
 
-    /* Phase 2: resolve the active profile (or fall through to picker/dashboard). */
-    {
-        ProfileEntry *arr = calloc(MAX_PROFILES, sizeof(ProfileEntry));
-        if (!arr) return NULL;
-        int count = 0;
-        profiles_load(arr, &count);
-        int active = profiles_active_index(arr, count);
-
-        if (active < 0) {
-            if (count > 0) {
-                picker_active = 1;
-                pldmgr_log("[Autoload] No enabled profile - showing startup picker (%d profiles).\n", count);
-            } else {
-                pldmgr_log("[Autoload] No profiles configured - booting to dashboard.\n");
-            }
-            free(arr);
-            /* Fully clear the overlay state so the picker (or dashboard) shows
-             * cleanly with no leftover sequence. */
-            is_executing = 0;
-            remaining_seconds = -1;
-            countdown_end_time = 0;
-            autoload_run_list[0] = '\0';
-            autoload_current_name[0] = '\0';
-            autoload_total_count = 0;
-            autoload_done_count = 0;
-            return NULL;
-        }
-
-        pldmgr_log("[Autoload] Enabled profile: %s\n", arr[active].name);
-        profiles_write_sequence(arr[active].list);
-        free(arr);
+    /* Phase 2: no active profile -> the picker (already flagged) or dashboard. */
+    if (!has_active) {
+        is_executing = 0;
+        remaining_seconds = -1;
+        countdown_end_time = 0;
+        autoload_run_list[0] = '\0';
+        autoload_current_name[0] = '\0';
+        autoload_total_count = 0;
+        autoload_done_count = 0;
+        return NULL;
     }
 
+    /* Active profile: resolve to the scratch file and run it with a countdown. */
+    profiles_write_sequence(active_list);
     if (stat(PROFILE_SCRATCH_PATH, &st) != 0) {
         pldmgr_log("[Autoload] !!! Resolved profile sequence missing.\n");
         is_executing = 0;

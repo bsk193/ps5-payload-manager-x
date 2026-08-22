@@ -537,8 +537,11 @@ int repository_install_commit(const char *filename, const char *uploaded_temp_pa
         }
     }
 
-    /* Verify succeeded, now clear previous payload and metadata. */
+    /* Verify succeeded. Clear previous versions of THIS payload only (by name),
+     * so a different variant sharing the base-name folder is preserved. */
+    payload_mgr_set_install_identity(items[found].name);
     payload_mgr_remove_old_files(payload_dir, items[found].filename);
+    payload_mgr_set_install_identity(NULL);
 
     if (rename(uploaded_temp_path, final_path) != 0) {
         free(items);

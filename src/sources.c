@@ -632,7 +632,11 @@ int sources_multi_repository_install(const char *filename, const char *source_id
         }
     }
 
+    /* Remove only previous versions of THIS payload (by name), keeping other
+     * variants that share the base-name folder. */
+    payload_mgr_set_install_identity(items[found].name);
     payload_mgr_remove_old_files(payload_dir, items[found].filename);
+    payload_mgr_set_install_identity(NULL);
 
     if (rename(tmp_path, final_path) != 0) {
         if (items) free(items);

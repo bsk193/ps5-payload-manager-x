@@ -36,4 +36,9 @@ void payload_mgr_set_keep_versions(int keep);
 void payload_mgr_install_lock(void);
 void payload_mgr_install_unlock(void);
 
+/* Set the identity (repo "name") of the payload being installed so a folder-wipe
+ * only removes same-named versions, keeping different variants. Pass NULL/"" to
+ * clear (base-name behaviour, e.g. uploads). Set inside the install lock. */
+void payload_mgr_set_install_identity(const char *name);
+
 #endif

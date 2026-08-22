@@ -91,6 +91,42 @@ void payload_mgr_set_keep_versions(int keep) {
     g_keep_sibling_versions = keep ? 1 : 0;
 }
 
+/* Identity (repo "name") of the payload currently being installed. When set,
+ * remove_old_files only wipes siblings that belong to the SAME payload (same
+ * name), so different variants sharing a base-name folder — e.g. "KStuff" and
+ * "KStuff Lite DR" — coexist instead of clobbering each other. Empty for uploads
+ * (which have no repo name and fall back to base-name behaviour). */
+static char g_install_identity[256] = "";
+
+void payload_mgr_set_install_identity(const char *name) {
+    if (name) {
+        strncpy(g_install_identity, name, sizeof(g_install_identity) - 1);
+        g_install_identity[sizeof(g_install_identity) - 1] = '\0';
+    } else {
+        g_install_identity[0] = '\0';
+    }
+}
+
+/* Read the "name" field from a folder entry's sidecar. entry may be a payload
+ * (<x>.elf) — we read <x>.elf.json — or a sidecar (<x>.json) itself. Returns 0
+ * and fills out when a name was found. */
+static int read_entry_name(const char *dir_path, const char *entry_name, char *out, size_t out_size) {
+    char json_path[720];
+    size_t len = strlen(entry_name);
+    out[0] = '\0';
+    if (len > 5 && strcmp(entry_name + len - 5, ".json") == 0)
+        snprintf(json_path, sizeof(json_path), "%s/%s", dir_path, entry_name);
+    else
+        snprintf(json_path, sizeof(json_path), "%s/%s.json", dir_path, entry_name);
+    char *j = NULL;
+    size_t sz = 0;
+    if (read_file_text(json_path, &j, &sz) == 0 && j) {
+        json_extract_string(j, j + sz, "name", out, out_size);
+        free(j);
+    }
+    return out[0] ? 0 : -1;
+}
+
 void payload_mgr_remove_old_files(const char *dir_path, const char *new_filename) {
     if (g_keep_sibling_versions) return; /* keep-both: leave other versions in place */
 
@@ -109,6 +145,17 @@ void payload_mgr_remove_old_files(const char *dir_path, const char *new_filename
                 strncmp(entry->d_name, new_filename, new_len) == 0 &&
                 strcmp(entry->d_name + new_len, ".json") == 0)
                 continue;
+        }
+
+        /* Name-aware: when installing a payload with a known identity, keep any
+         * differently-named payload (a different variant sharing this folder).
+         * Only same-name versions (and nameless strays) are removed. */
+        if (g_install_identity[0]) {
+            char owner[256];
+            if (read_entry_name(dir_path, entry->d_name, owner, sizeof(owner)) == 0 &&
+                strcmp(owner, g_install_identity) != 0) {
+                continue; /* different variant -> keep */
+            }
         }
 
         char full_path[640];
@@ -370,7 +417,11 @@ int payload_mgr_import_to_storage(const char *filename, const char *temp_path,
     char final_path[640];
     snprintf(final_path, sizeof(final_path), "%s/%s", payload_dir, filename);
 
-    /* Remove old files in the payload directory */
+    /* Remove old files in the payload directory. Uploads have no repo "name",
+     * so clear any install identity to get base-name behaviour (wipe all old
+     * versions in the folder). This also hardens against a stale identity ever
+     * leaking in from a repo-install path. */
+    payload_mgr_set_install_identity(NULL);
     payload_mgr_remove_old_files(payload_dir, filename);
 
     if (rename(temp_path, final_path) != 0) {

@@ -54,6 +54,22 @@ export const payloadBaseName = (filename) => {
   return clean.toLowerCase();
 };
 
+// Compare two version strings numerically, part by part, so "1.10" > "1.6.7"
+// (parseFloat would wrongly give 1.1 < 1.6). Leading "v" is ignored; parts split
+// on . - _ and non-numeric suffixes (e.g. "b17", "-dr-test1") are dropped.
+// Returns >0 if a is newer, <0 if older, 0 if equal/unknown.
+export const compareVersions = (a, b) => {
+  const parts = (v) => String(v || '').replace(/^v/i, '').split(/[.\-_]/)
+    .map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+  const pa = parts(a), pb = parts(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] || 0, y = pb[i] || 0;
+    if (x !== y) return x - y;
+  }
+  return 0;
+};
+
 // Parse a firmware string like "7.61" or "10.20" to a comparable number.
 export const parseFw = (s) => {
   if (!s) return null;

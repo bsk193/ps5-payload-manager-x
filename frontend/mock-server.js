@@ -31,24 +31,31 @@ const remoteRepository = [
     checksum: "e6c1babbfd5e1b766d12b659853b514b9faedf6333cbe8cb514b1a3e79b7ce39"
   },
   {
-    name: "KStuff Lite",
-    filename: "kstuff-lite_v1.09.elf",
-    url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff-lite_v1.09.elf",
-    description: "Lite version of kstuff (latest)",
-    version: "v1.09",
+    name: "KStuff",
+    filename: "kstuff_v1.11.elf",
+    url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff_v1.11.elf",
+    description: "EchoStretch KStuff Lite (newer than installed v1.10)",
+    version: "v1.11",
     min_fw: "1.00",
-    max_fw: "10.20",
-    checksum: "54df47a48d9c5ee4338ef70ba66093908a4f2845e53468bdd7c080b65d7488c1"
+    max_fw: "10.20"
   },
   {
-    name: "KStuff Lite",
-    filename: "kstuff-lite_v1.06.elf",
-    url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff-lite_v1.06.elf",
-    description: "Lite version of kstuff (older FW)",
-    version: "v1.06",
+    name: "KStuff",
+    filename: "kstuff_v1.6.7.elf",
+    url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff_v1.6.7.elf",
+    description: "EchoStretch KStuff old (older than installed v1.10)",
+    version: "v1.6.7",
     min_fw: "1.00",
-    max_fw: "7.61",
-    checksum: "aaaa47a48d9c5ee4338ef70ba66093908a4f2845e53468bdd7c080b65d7488c2"
+    max_fw: "7.61"
+  },
+  {
+    name: "KStuff Lite DR",
+    filename: "kstuff_1.2-dr-test1.elf",
+    url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff_1.2-dr-test1.elf",
+    description: "Drakmor KStuff variant (different payload, must NOT show update)",
+    version: "1.2-dr-test1",
+    min_fw: "1.00",
+    max_fw: "10.20"
   }
 ];
 
@@ -182,21 +189,21 @@ app.get('/list_payloads', (req, res) => {
     payloads: [
       "/data/pldmgr/goldhen_v2.4b17.elf",
       "/data/pldmgr/etaHEN_1.8.elf",
-      "/data/pldmgr/kstuff.elf",
+      "/data/pldmgr/kstuff_v1.10.elf",
       "/mnt/usb0/pldmgr/linux_loader.elf"
     ],
     meta: {
       // payloads with no entry here = local/direct upload (no badge shown)
       "goldhen_v2.4b17.elf": { display_name: "GoldHEN", version: "v2.4b17", min_fw: "1.00", max_fw: "7.61" },
       "etaHEN_1.8.elf": { display_name: "etaHEN", version: "1.8", min_fw: "1.00", max_fw: "10.20" },
-      "kstuff.elf": {
+      // installed EchoStretch KStuff Lite v1.10 (name "KStuff")
+      "kstuff_v1.10.elf": {
         display_name: "KStuff",
-        source_name: "Community Payloads",
+        source_name: "Official Repository",
         install_source: "repository",
-        install_source_detail: "https://example.com/community-payloads.json",
-        version: "v1.03",
-        min_fw: "2.50",
-        max_fw: "10.01"
+        version: "v1.10",
+        min_fw: "1.00",
+        max_fw: "10.20"
       }
     }
   });

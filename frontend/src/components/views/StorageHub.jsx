@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { CloudDownload, Upload, Package, Database, RefreshCw, Trash2, Loader2, AlertTriangle, HardDrive, Usb, ChevronDown, Globe, Search, Power } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { cn, isPS5, isIOS, parsePayloadName, fwCompatible } from '../../utils/helpers'
+import { cn, isPS5, isIOS, parsePayloadName, fwCompatible, compareVersions } from '../../utils/helpers'
 import PayloadName from '../ui/PayloadName'
 
 const PayloadItem = ({ p, multiSources, isPS5, onInstall, srcId, srcUrl, consoleFw }) => {
@@ -149,13 +149,25 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
   }
 
   /* ---- Derive remote status for a flat list of payloads ---- */
+  // Identity of an installed payload: prefer its stored repo name (so variants
+  // like "KStuff" and "KStuff Lite DR" that share a base filename don't collide);
+  // fall back to the version-stripped base name when no name is available.
+  const installedVersionOf = (f) => payloadMeta?.[f]?.version || parsePayloadName(f).version
   const enrichPayloads = (list) =>
     list.map(p => {
       const isInstalled = p.filename ? localFilenames.includes(p.filename) : false
-      const baseName = getBaseName(p.filename)
-      const installedVersion = localFilenames.find(f => getBaseName(f) === baseName)
-      const isUpdate = !isInstalled && !!installedVersion
-      return { ...p, isInstalled, isUpdate, installedFilename: installedVersion }
+      const base = getBaseName(p.filename)
+      const installedSame = localFilenames.find(f => {
+        const dn = payloadMeta?.[f]?.display_name
+        if (p.name && dn) return dn === p.name        // same payload = same repo name
+        return getBaseName(f) === base                 // fallback: base filename
+      })
+      const repoVer = p.version || parsePayloadName(p.filename).version
+      // Only an "update" when the same payload is installed AND this repo version
+      // is genuinely newer than the installed one.
+      const isUpdate = !isInstalled && !!installedSame &&
+        compareVersions(repoVer, installedVersionOf(installedSame)) > 0
+      return { ...p, isInstalled, isUpdate, installedFilename: installedSame }
     }).sort((a, b) => {
       if (a.isUpdate && !b.isUpdate) return -1
       if (!a.isUpdate && b.isUpdate) return 1
@@ -233,9 +245,12 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
               const fileName = path.split('/').pop()
               const sourceBadge = getSourceBadge(fileName)
               const meta = payloadMeta?.[fileName]
-              // Find update in all sources (multi or legacy)
+              // Find update in all sources (multi or legacy). Prefer a genuine
+              // (version-aware) update entry for this exact installed file, else
+              // any matching repo entry.
               const allRemote = enrichedSources.flatMap(s => s.payloads)
-              const remoteMatch = allRemote.find(rp => rp.filename === fileName || rp.installedFilename === fileName)
+              const remoteMatch = allRemote.find(rp => rp.installedFilename === fileName && rp.isUpdate)
+                || allRemote.find(rp => rp.filename === fileName || rp.installedFilename === fileName)
               const remoteVersion = remoteMatch?.version || (remoteMatch?.filename ? parsePayloadName(remoteMatch.filename).version : null)
               return (
                 <div key={path} className="group flex flex-col justify-center p-4 md:p-6 glass-card rounded-ps-2xl border-white/10 hover:border-ps-blue/30 gap-3 md:gap-4 relative overflow-hidden">

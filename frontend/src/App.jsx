@@ -382,8 +382,9 @@ function App() {
         message: t("app.modals.reinstall.message", "A version of {{name}} is already installed. Do you want to replace it with the repository version?", { name: p.name || p.filename }),
         onConfirm: () => performInstall(p, sourceId, repoUrl, true)
       })
-    } else if (p.isUpdate) {
-      // A different version is installed: keep both or replace the old one.
+    } else if (p.installedSibling || p.isUpdate) {
+      // A different version of this payload is already installed (newer, older,
+      // or an experimental build): keep both or replace the existing one.
       setConfirmModal({
         show: true,
         title: t("app.modals.version.title", "Existing Version Found"),

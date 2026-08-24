@@ -2,11 +2,41 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { CloudDownload, Upload, Package, Database, RefreshCw, Trash2, Loader2, AlertTriangle, HardDrive, Usb, ChevronDown, Globe, Search, Power } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { QRCodeSVG } from 'qrcode.react'
-import { cn, isPS5, isIOS, parsePayloadName, fwCompatible, compareVersions } from '../../utils/helpers'
+import { cn, isPS5, isIOS, parsePayloadName, fwCompatible, compareVersions, isExperimentalVersion } from '../../utils/helpers'
 import PayloadName from '../ui/PayloadName'
+
+const dispVersion = (v) => {
+  const ver = v.version || parsePayloadName(v.filename).version
+  if (!ver) return v.filename
+  return /^v/i.test(ver) ? ver : 'v' + ver
+}
 
 const PayloadItem = ({ p, multiSources, isPS5, onInstall, srcId, srcUrl, consoleFw }) => {
   const { t } = useTranslation()
+  const versions = p.versions || [p]
+  const [selFile, setSelFile] = useState(p.defaultFilename || versions[0]?.filename)
+  // Repo data refreshes after an install; re-sync the default selection when the
+  // group's versions change so a just-installed pick doesn't stay stuck.
+  useEffect(() => {
+    setSelFile(p.defaultFilename || versions[0]?.filename)
+  }, [p.defaultFilename, versions.length])
+
+  const sel = versions.find(v => v.filename === selFile) || versions[0]
+  const multiVersion = versions.length > 1
+
+  const optionLabel = (v) => {
+    let s = dispVersion(v)
+    if (isExperimentalVersion(v)) s += ' · ' + t("storage_hub.experimental", "experimental")
+    if (v.isInstalled) s += ' · ' + t("storage_hub.installed", "installed")
+    return s
+  }
+
+  const btnLabel = sel.isInstalled
+    ? t("storage_hub.reinstall_btn", "Reinstall")
+    : sel.isUpdate
+      ? t("storage_hub.update_btn", "Update")
+      : t("storage_hub.install_btn", "Install")
+
   return (
   <div
     className={cn(
@@ -18,23 +48,40 @@ const PayloadItem = ({ p, multiSources, isPS5, onInstall, srcId, srcUrl, console
     )}
   >
     <div className="space-y-2 min-w-0">
-      <PayloadName path={p.filename} name={p.name} version={p.version} minFw={p.min_fw} maxFw={p.max_fw} fwIncompatible={!fwCompatible(p.min_fw, p.max_fw, consoleFw)} className="text-xl md:text-2xl text-white" stacked lastUpdate={p.last_update} />
-      {p.description && (
-        <p className="text-sm md:text-base text-zinc-400 font-medium leading-relaxed">{p.description}</p>
+      <PayloadName path={sel.filename} name={sel.name} version={sel.version} minFw={sel.min_fw} maxFw={sel.max_fw} fwIncompatible={!fwCompatible(sel.min_fw, sel.max_fw, consoleFw)} className="text-xl md:text-2xl text-white" stacked lastUpdate={sel.last_update} />
+      {(sel.description || p.description) && (
+        <p className="text-sm md:text-base text-zinc-400 font-medium leading-relaxed">{sel.description || p.description}</p>
+      )}
+      {multiVersion && (
+        <div className="flex items-center gap-2 pt-1">
+          <span className="text-xs uppercase tracking-widest text-zinc-500 font-bold">{t("storage_hub.version_label", "Version")}</span>
+          <div className="relative">
+            <select
+              value={sel.filename}
+              onChange={e => setSelFile(e.target.value)}
+              className="appearance-none bg-white/5 border border-white/10 text-white text-sm font-semibold rounded-xl pl-3 pr-8 py-2 focus:outline-none focus:border-ps-blue transition-colors cursor-pointer"
+            >
+              {versions.map(v => (
+                <option key={v.filename} value={v.filename} className="bg-ps-card text-white">{optionLabel(v)}</option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-zinc-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
       )}
     </div>
     <button
-      onClick={() => onInstall(p, srcId === 'legacy-repo' ? null : srcId, srcUrl)}
+      onClick={() => onInstall(sel, srcId === 'legacy-repo' ? null : srcId, srcUrl)}
       className={cn(
         "flex items-center justify-center space-x-3 px-6 md:px-8 py-3 md:py-5 rounded-2xl font-bold text-lg transition-all shrink-0 transform active:scale-95",
         isPS5 ? "w-auto px-12" : "w-full md:w-auto",
-        p.isUpdate
+        sel.isUpdate
           ? "bg-emerald-600 hover:bg-emerald-500 text-white"
           : "bg-ps-blue hover:bg-ps-blue/80 text-white"
       )}
     >
       <CloudDownload className="w-5 h-5 md:w-6 md:h-6" />
-      <span>{p.isUpdate ? t("storage_hub.update_btn", "Update") : t("storage_hub.install_btn", "Install")}</span>
+      <span>{btnLabel}</span>
     </button>
   </div>
 )
@@ -58,7 +105,7 @@ const CategoryGroup = ({ category, payloads, multiSources, isPS5, onInstall, src
         )}>
           {payloads.map(p => (
             <PayloadItem
-              key={p.filename}
+              key={p.name || p.filename}
               p={p}
               multiSources={multiSources}
               isPS5={isPS5}
@@ -148,6 +195,39 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
     return clean.replace(/[_-]ps[45]$/i, '');
   }
 
+  const versionOf = (v) => v.version || parsePayloadName(v.filename).version || ''
+
+  // Collapse repo entries that are the same payload (same `name`, else same base
+  // filename) into a single group carrying every version, so one card can offer
+  // a version picker. Versions are sorted newest-first; the default selection is
+  // the newest not-yet-installed stable build (falling back to newest available,
+  // then newest overall).
+  const groupByPayload = (list) => {
+    const map = new Map()
+    for (const p of list) {
+      const key = (p.name && p.name.trim())
+        ? 'n:' + p.name.trim().toLowerCase()
+        : 'b:' + getBaseName(p.filename)
+      if (!map.has(key)) map.set(key, [])
+      map.get(key).push(p)
+    }
+    const groups = []
+    for (const versions of map.values()) {
+      const sorted = [...versions].sort((a, b) => compareVersions(versionOf(b), versionOf(a)))
+      const rep = sorted.find(v => !v.isInstalled && !isExperimentalVersion(v))
+        || sorted.find(v => !v.isInstalled)
+        || sorted[0]
+      groups.push({
+        ...rep,
+        versions: sorted,
+        defaultFilename: rep.filename,
+        hasUpdate: sorted.some(v => v.isUpdate),
+        allInstalled: sorted.every(v => v.isInstalled),
+      })
+    }
+    return groups
+  }
+
   /* ---- Derive remote status for a flat list of payloads ---- */
   // Identity of an installed payload: prefer its stored repo name (so variants
   // like "KStuff" and "KStuff Lite DR" that share a base filename don't collide);
@@ -167,7 +247,11 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
       // is genuinely newer than the installed one.
       const isUpdate = !isInstalled && !!installedSame &&
         compareVersions(repoVer, installedVersionOf(installedSame)) > 0
-      return { ...p, isInstalled, isUpdate, installedFilename: installedSame }
+      // A *different* version of the same payload is already installed. Used to
+      // trigger the Keep-Both / Replace prompt for ANY version pick (older,
+      // newer, or experimental), not just newer "updates".
+      const installedSibling = !!installedSame && installedSame !== p.filename
+      return { ...p, isInstalled, isUpdate, installedSibling, installedFilename: installedSame }
     }).sort((a, b) => {
       if (a.isUpdate && !b.isUpdate) return -1
       if (!a.isUpdate && b.isUpdate) return 1
@@ -377,8 +461,10 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
           /* ===== REPOSITORY CATALOGS ===== */
           <div className="space-y-4">
             {enrichedSources.map(src => {
-              let availablePayloads = src.payloads.filter(p => !p.isInstalled || p.isUpdate)
-              
+              // Group entries into per-payload version sets, then hide groups
+              // whose every version is already installed.
+              let availablePayloads = groupByPayload(src.payloads).filter(g => !g.allInstalled)
+
               if (search.trim() !== '') {
                 const q = search.toLowerCase()
                 availablePayloads = availablePayloads.filter(p => 
@@ -500,7 +586,7 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
                       ) : (
                         availablePayloads.map(p => (
                           <PayloadItem
-                            key={p.filename}
+                            key={p.name || p.filename}
                             p={p}
                             multiSources={multiSources}
                             isPS5={isPS5}

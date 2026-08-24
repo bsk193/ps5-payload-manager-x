@@ -49,6 +49,16 @@ const remoteRepository = [
     max_fw: "7.61"
   },
   {
+    name: "KStuff",
+    filename: "kstuff_v1.12-beta.elf",
+    url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff_v1.12-beta.elf",
+    description: "EchoStretch KStuff experimental preview build",
+    version: "v1.12-beta",
+    channel: "experimental",
+    min_fw: "1.00",
+    max_fw: "10.20"
+  },
+  {
     name: "KStuff Lite DR",
     filename: "kstuff_1.2-dr-test1.elf",
     url: "https://bsk193.github.io/console-homebrew-hub/payloads/kstuff_1.2-dr-test1.elf",

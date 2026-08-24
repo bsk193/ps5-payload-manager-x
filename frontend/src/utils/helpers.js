@@ -88,6 +88,18 @@ export const fwCompatible = (minFw, maxFw, consoleFw) => {
   return true;
 };
 
+// Is a repo entry an experimental / pre-release build? Prefers the explicit
+// `channel` ("stable" vs anything else) or `prerelease: true` field from the
+// repo JSON; falls back to common pre-release markers in the version string
+// (e.g. "-dr", "-beta", "-rc1", "-test1") for sources that omit the field.
+export const isExperimentalVersion = (entry) => {
+  if (!entry) return false;
+  if (entry.channel) return String(entry.channel).toLowerCase() !== 'stable';
+  if (entry.prerelease === true) return true;
+  const v = entry.version || (entry.filename ? parsePayloadName(entry.filename).version : '') || '';
+  return /(?:^|[-_.])(?:dr|rc|beta|alpha|exp|experimental|test|dev|nightly|pre|snapshot)\d*(?:$|[-_.])/i.test(String(v));
+};
+
 export const isSystemPayload = (filename) => {
   if (!filename) return false;
   const name = filename.split('/').pop().toLowerCase();

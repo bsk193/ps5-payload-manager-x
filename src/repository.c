@@ -6,6 +6,7 @@
 #include <time.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <pthread.h>
 #include <sys/stat.h>
 #include <curl/curl.h>
 
@@ -71,8 +72,12 @@ int download_to_file(const char *url, const char *out_path) {
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
 
-        /* Allow redirection */
+        /* Allow redirection (GitHub release assets redirect to a CDN), but only
+         * to http/https and cap the chain — never follow a redirect to file://,
+         * gopher://, etc., which are classic SSRF pivots. */
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 10L);
+        curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
         res = curl_easy_perform(curl);
 
         /* If SSL verification fails (e.g., due to mbedTLS Quirks with Let's Encrypt / Sectigo
@@ -142,6 +147,7 @@ int parse_repository_payloads(const char *json, RepoPayload **out_items, size_t 
         json_extract_string(p, end, "checksum", item.checksum, sizeof(item.checksum));
         json_extract_string(p, end, "min_fw", item.min_fw, sizeof(item.min_fw));
         json_extract_string(p, end, "max_fw", item.max_fw, sizeof(item.max_fw));
+        json_extract_string(p, end, "versions_url", item.versions_url, sizeof(item.versions_url));
 
         if (json_extract_string(p, end, "category", item.category, sizeof(item.category)) != 0 || strlen(item.category) == 0) {
             strncpy(item.category, "Uncategorized", sizeof(item.category) - 1);
@@ -288,6 +294,160 @@ int repository_push_json(const char *json, size_t len) {
     return 0;
 }
 
+/* ── Version-list expansion ────────────────────────────────
+ * A feed entry may carry a "versions_url" pointing at a mirror-hosted flat JSON
+ * array of that payload's other versions. At refresh we fetch those and splice
+ * their entries into the cached array, so the (unchanged) version picker and
+ * install-by-filename path see every build. This touches only the fetch/refresh
+ * path — never the install/delete path — so a bad expansion can at worst make
+ * the catalog fail to load, never lose files. */
+
+/* Return a malloc'd, trimmed copy of a JSON array's *contents* (between the
+ * first '[' and the last ']'). NULL if there is no array or it is empty. */
+static char *extract_array_inner(const char *text, size_t len) {
+    const char *lb = memchr(text, '[', len);
+    if (!lb)
+        return NULL;
+    const char *rb = NULL;
+    for (const char *q = text + len - 1; q > lb; q--) {
+        if (*q == ']') { rb = q; break; }
+    }
+    if (!rb || rb <= lb + 1)
+        return NULL;
+    const char *s = lb + 1;
+    const char *e = rb;
+    while (s < e && (*s == ' ' || *s == '\n' || *s == '\r' || *s == '\t')) s++;
+    while (e > s && (e[-1] == ' ' || e[-1] == '\n' || e[-1] == '\r' || e[-1] == '\t')) e--;
+    if (e <= s)
+        return NULL;
+    size_t n = (size_t)(e - s);
+    char *out = malloc(n + 1);
+    if (!out)
+        return NULL;
+    memcpy(out, s, n);
+    out[n] = '\0';
+    return out;
+}
+
+/* A versions_url is fetchable only if it is an https:// URL on the EXACT same
+ * host as the configured feed (REPOSITORY_SOURCE_URL). The mirror hosts both the
+ * feed and the per-payload version lists, so this restricts fetches to a host we
+ * already fetch the feed from — a hostile or compromised feed cannot redirect
+ * the refresh at an internal address (SSRF). The authority is compared verbatim
+ * up to the first '/', so credential ("user@host") and suffix ("host.evil.com")
+ * tricks fail the exact match. */
+static int versions_url_is_fetchable(const char *u) {
+    const char *scheme = "https://";
+    size_t sl = strlen(scheme);
+    if (!u || strncmp(u, scheme, sl) != 0)
+        return 0;
+    if (strncmp(REPOSITORY_SOURCE_URL, scheme, sl) != 0)
+        return 0;
+    const char *uh = u + sl;                     /* authority of versions_url */
+    const char *fh = REPOSITORY_SOURCE_URL + sl; /* authority of the feed     */
+    size_t un = strcspn(uh, "/");
+    size_t fn = strcspn(fh, "/");
+    if (un == 0 || un != fn)
+        return 0;
+    return strncasecmp(uh, fh, un) == 0;
+}
+
+/* Fetch every distinct versions_url in `items`, append their array entries to
+ * the base feed array `main_json`, and write the combined array to the cache.
+ * Returns 0 if an expanded cache was written; -1 if there was nothing to expand
+ * (the caller then just persists the raw feed). */
+static int build_expanded_cache(const char *main_json, size_t main_len,
+                                RepoPayload *items, size_t count) {
+    char *base_inner = extract_array_inner(main_json, main_len);
+    if (!base_inner)
+        return -1;
+
+    char *extras = NULL;
+    size_t extras_len = 0;
+    /* Per-thread temp suffix: the HTTP server is thread-per-connection and a
+     * force-refresh is reachable from a request, so two refreshes can overlap.
+     * A thread-unique suffix keeps their scratch files from clobbering each
+     * other. */
+    unsigned long tid = (unsigned long)pthread_self();
+    char tmp[600];
+    snprintf(tmp, sizeof(tmp), "%s.ver.%lx", REPOSITORY_CACHE_PATH, tid);
+
+    for (size_t i = 0; i < count; i++) {
+        const char *vu = items[i].versions_url;
+        if (!versions_url_is_fetchable(vu))
+            continue;
+        /* Skip a URL already handled by an earlier entry (compare in place — no
+         * extra buffer, catalogs are small). */
+        int dup = 0;
+        for (size_t j = 0; j < i; j++)
+            if (strcmp(items[j].versions_url, vu) == 0) { dup = 1; break; }
+        if (dup)
+            continue;
+
+        if (download_to_file(vu, tmp) != 0)
+            continue;
+        char *vtext = NULL;
+        size_t vsize = 0;
+        if (read_file_text(tmp, &vtext, &vsize) != 0 || !vtext) {
+            remove(tmp);
+            if (vtext) free(vtext);
+            continue;
+        }
+        remove(tmp);
+        char *inner = extract_array_inner(vtext, vsize);
+        free(vtext);
+        if (!inner)
+            continue;
+
+        size_t il = strlen(inner);
+        char *ne = realloc(extras, extras_len + il + 2);
+        if (!ne) { free(inner); continue; }
+        extras = ne;
+        if (extras_len > 0)
+            extras[extras_len++] = ',';
+        memcpy(extras + extras_len, inner, il);
+        extras_len += il;
+        extras[extras_len] = '\0';
+        free(inner);
+    }
+
+    if (!extras || extras_len == 0) {
+        free(base_inner);
+        free(extras);
+        return -1;
+    }
+
+    size_t base_len = strlen(base_inner);
+    size_t total = 1 + base_len + 1 + extras_len + 1; /* [ base , extras ] */
+    char *out = malloc(total + 1);
+    if (!out) {
+        free(base_inner);
+        free(extras);
+        return -1;
+    }
+    size_t pos = 0;
+    out[pos++] = '[';
+    memcpy(out + pos, base_inner, base_len);
+    pos += base_len;
+    out[pos++] = ',';
+    memcpy(out + pos, extras, extras_len);
+    pos += extras_len;
+    out[pos++] = ']';
+    free(base_inner);
+    free(extras);
+
+    char ctmp[600];
+    snprintf(ctmp, sizeof(ctmp), "%s.exp.%lx", REPOSITORY_CACHE_PATH, tid);
+    FILE *f = fopen(ctmp, "wb");
+    if (!f) { free(out); return -1; }
+    size_t wr = fwrite(out, 1, pos, f);
+    fclose(f);
+    free(out);
+    if (wr != pos) { remove(ctmp); return -1; }
+    if (rename(ctmp, REPOSITORY_CACHE_PATH) != 0) { remove(ctmp); return -1; }
+    return 0;
+}
+
 int repository_ensure_fresh(int force_refresh) {
     long last_update = 0;
     time_t now = time(NULL);
@@ -329,8 +489,20 @@ int repository_ensure_fresh(int force_refresh) {
         return -1;
     }
 
+    /* If any entry references a versions_url, fetch those and write an expanded
+     * cache. On success the raw feed tmp is no longer needed; on "nothing to
+     * expand" (-1) we fall through and persist the raw feed as before. */
+    int expanded = build_expanded_cache(json, json_size, items, count);
+
     free(items);
     free(json);
+
+    if (expanded == 0) {
+        remove(tmp_path);
+        config_write_last_update((long)now);
+        pldmgr_log("[PLDMGR] Repository cache refreshed (expanded with versions)\n");
+        return 0;
+    }
 
     if (rename(tmp_path, REPOSITORY_CACHE_PATH) != 0) {
         remove(tmp_path);

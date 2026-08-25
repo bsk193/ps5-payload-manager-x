@@ -18,6 +18,10 @@ typedef struct RepoPayload {
     char category[128];
     char min_fw[64];
     char max_fw[64];
+    /* Optional: URL of a mirror-hosted flat JSON array listing every available
+     * version of this payload. Expanded into the cache at refresh so the version
+     * picker can show more than the single latest-stable entry. */
+    char versions_url[1024];
 } RepoPayload;
 
 /* Download a URL to a local file. Returns 0 on success, -1 on failure. */

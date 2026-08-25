@@ -213,7 +213,15 @@ const StorageHub = ({ payloads, payloadMeta, onInstall, onDelete, onUpload, onIm
     }
     const groups = []
     for (const versions of map.values()) {
-      const sorted = [...versions].sort((a, b) => compareVersions(versionOf(b), versionOf(a)))
+      // Drop duplicate filenames — the latest-stable entry from payloads.json and
+      // the expanded versions_url list can legitimately overlap.
+      const seen = new Set()
+      const unique = versions.filter(v => {
+        if (seen.has(v.filename)) return false
+        seen.add(v.filename)
+        return true
+      })
+      const sorted = [...unique].sort((a, b) => compareVersions(versionOf(b), versionOf(a)))
       const rep = sorted.find(v => !v.isInstalled && !isExperimentalVersion(v))
         || sorted.find(v => !v.isInstalled)
         || sorted[0]

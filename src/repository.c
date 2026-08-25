@@ -329,100 +329,71 @@ static char *extract_array_inner(const char *text, size_t len) {
     return out;
 }
 
-/* A versions_url is fetchable only if it is an https:// URL on the EXACT same
- * host as the configured feed (REPOSITORY_SOURCE_URL). The mirror hosts both the
- * feed and the per-payload version lists, so this restricts fetches to a host we
- * already fetch the feed from — a hostile or compromised feed cannot redirect
- * the refresh at an internal address (SSRF). The authority is compared verbatim
- * up to the first '/', so credential ("user@host") and suffix ("host.evil.com")
- * tricks fail the exact match. */
-static int versions_url_is_fetchable(const char *u) {
-    const char *scheme = "https://";
-    size_t sl = strlen(scheme);
-    if (!u || strncmp(u, scheme, sl) != 0)
-        return 0;
-    if (strncmp(REPOSITORY_SOURCE_URL, scheme, sl) != 0)
-        return 0;
-    const char *uh = u + sl;                     /* authority of versions_url */
-    const char *fh = REPOSITORY_SOURCE_URL + sl; /* authority of the feed     */
-    size_t un = strcspn(uh, "/");
-    size_t fn = strcspn(fh, "/");
-    if (un == 0 || un != fn)
-        return 0;
-    return strncasecmp(uh, fh, un) == 0;
+/* Build the URL of the combined versions file: the feed's sibling "versions.json"
+ * (everything up to the feed's last '/', then "versions.json"). Derived from
+ * REPOSITORY_SOURCE_URL, so it is the same scheme+host+directory we already fetch
+ * the feed from — no user-controlled URL, so no SSRF surface. */
+static int derive_versions_url(char *out, size_t out_size) {
+    const char *src = REPOSITORY_SOURCE_URL;
+    const char *slash = strrchr(src, '/');
+    if (!slash)
+        return -1;
+    size_t dir_len = (size_t)(slash - src) + 1; /* keep the trailing '/' */
+    int n = snprintf(out, out_size, "%.*sversions.json", (int)dir_len, src);
+    return (n > 0 && (size_t)n < out_size) ? 0 : -1;
 }
 
-/* Fetch every distinct versions_url in `items`, append their array entries to
- * the base feed array `main_json`, and write the combined array to the cache.
- * Returns 0 if an expanded cache was written; -1 if there was nothing to expand
- * (the caller then just persists the raw feed). */
-static int build_expanded_cache(const char *main_json, size_t main_len,
-                                RepoPayload *items, size_t count) {
+/* Fetch the single combined versions file (sibling of the feed) and append its
+ * array entries to the base feed array, writing the combined array to the cache.
+ * One request — the PS5 can't reliably do a fan-out of many. Returns 0 if an
+ * expanded cache was written; -1 if there was nothing to expand (the caller then
+ * just persists the raw feed). */
+static int build_expanded_cache(const char *main_json, size_t main_len) {
     char *base_inner = extract_array_inner(main_json, main_len);
     if (!base_inner)
         return -1;
 
-    char *extras = NULL;
-    size_t extras_len = 0;
+    char vurl[1200];
+    if (derive_versions_url(vurl, sizeof(vurl)) != 0) {
+        free(base_inner);
+        return -1;
+    }
+
     /* Per-thread temp suffix: the HTTP server is thread-per-connection and a
      * force-refresh is reachable from a request, so two refreshes can overlap.
-     * A thread-unique suffix keeps their scratch files from clobbering each
-     * other. */
+     * A thread-unique suffix keeps their scratch files from clobbering. */
     unsigned long tid = (unsigned long)pthread_self();
     char tmp[600];
     snprintf(tmp, sizeof(tmp), "%s.ver.%lx", REPOSITORY_CACHE_PATH, tid);
 
-    for (size_t i = 0; i < count; i++) {
-        const char *vu = items[i].versions_url;
-        if (!versions_url_is_fetchable(vu))
-            continue;
-        /* Skip a URL already handled by an earlier entry (compare in place — no
-         * extra buffer, catalogs are small). */
-        int dup = 0;
-        for (size_t j = 0; j < i; j++)
-            if (strcmp(items[j].versions_url, vu) == 0) { dup = 1; break; }
-        if (dup)
-            continue;
-
-        if (download_to_file(vu, tmp) != 0)
-            continue;
-        char *vtext = NULL;
-        size_t vsize = 0;
-        if (read_file_text(tmp, &vtext, &vsize) != 0 || !vtext) {
-            remove(tmp);
-            if (vtext) free(vtext);
-            continue;
-        }
-        remove(tmp);
-        char *inner = extract_array_inner(vtext, vsize);
-        free(vtext);
-        if (!inner)
-            continue;
-
-        size_t il = strlen(inner);
-        char *ne = realloc(extras, extras_len + il + 2);
-        if (!ne) { free(inner); continue; }
-        extras = ne;
-        if (extras_len > 0)
-            extras[extras_len++] = ',';
-        memcpy(extras + extras_len, inner, il);
-        extras_len += il;
-        extras[extras_len] = '\0';
-        free(inner);
-    }
-
-    if (!extras || extras_len == 0) {
+    if (download_to_file(vurl, tmp) != 0) {
+        pldmgr_log("[PLDMGR] No combined versions file (%s) - serving base feed\n", vurl);
         free(base_inner);
-        free(extras);
+        return -1;
+    }
+    char *vtext = NULL;
+    size_t vsize = 0;
+    if (read_file_text(tmp, &vtext, &vsize) != 0 || !vtext) {
+        remove(tmp);
+        if (vtext) free(vtext);
+        free(base_inner);
+        return -1;
+    }
+    remove(tmp);
+    char *inner = extract_array_inner(vtext, vsize);
+    free(vtext);
+    if (!inner) {
+        free(base_inner);
         return -1;
     }
 
     size_t base_len = strlen(base_inner);
-    size_t total = 1 + base_len + 1 + extras_len + 1; /* [ base , extras ] */
+    size_t il = strlen(inner);
+    size_t total = 1 + base_len + 1 + il + 1; /* [ base , inner ] */
     char *out = malloc(total + 1);
     if (!out) {
         free(base_inner);
-        free(extras);
+        free(inner);
         return -1;
     }
     size_t pos = 0;
@@ -430,11 +401,11 @@ static int build_expanded_cache(const char *main_json, size_t main_len,
     memcpy(out + pos, base_inner, base_len);
     pos += base_len;
     out[pos++] = ',';
-    memcpy(out + pos, extras, extras_len);
-    pos += extras_len;
+    memcpy(out + pos, inner, il);
+    pos += il;
     out[pos++] = ']';
     free(base_inner);
-    free(extras);
+    free(inner);
 
     char ctmp[600];
     snprintf(ctmp, sizeof(ctmp), "%s.exp.%lx", REPOSITORY_CACHE_PATH, tid);
@@ -489,10 +460,10 @@ int repository_ensure_fresh(int force_refresh) {
         return -1;
     }
 
-    /* If any entry references a versions_url, fetch those and write an expanded
-     * cache. On success the raw feed tmp is no longer needed; on "nothing to
-     * expand" (-1) we fall through and persist the raw feed as before. */
-    int expanded = build_expanded_cache(json, json_size, items, count);
+    /* Merge the combined versions file (if the mirror publishes one) into the
+     * cache so the version picker sees every build. On "nothing to expand" (-1)
+     * we fall through and persist the raw feed as before. */
+    int expanded = build_expanded_cache(json, json_size);
 
     free(items);
     free(json);

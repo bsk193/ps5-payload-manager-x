@@ -305,13 +305,23 @@ void* pldmgr_autoload_worker(void* arg) {
         free(arr);
     }
 
-    /* Wait briefly for the frontend so the overlay/picker is ready. */
+    /* Wait briefly for the frontend so the overlay/picker is ready. Stop early if
+     * the user already picked a profile — a forced run has then taken over the
+     * overlay and this boot worker must get out of its way. */
     if (browser_open) {
         pldmgr_log("[Autoload] Browser Mode: Waiting for frontend connection...\n");
         int wait_timeout = 50; /* 50 * 100ms = 5 seconds */
-        while (!autoload_triggered && wait_timeout-- > 0) {
+        while (!autoload_triggered && !forced_run && wait_timeout-- > 0) {
             usleep(100000);
         }
+    }
+
+    /* If a manual profile run started while we were waiting, it now owns the
+     * overlay status and its own worker is running the sequence. Bail before we
+     * launch startup payloads under it or clobber its status. */
+    if (forced_run) {
+        pldmgr_log("[Autoload] Manual run started during boot - yielding.\n");
+        return NULL;
     }
 
     /* Phase 1: startup payloads — launch silently in the background. They are NOT
@@ -320,6 +330,14 @@ void* pldmgr_autoload_worker(void* arg) {
     if (stat(STARTUP_LIST_PATH, &st) == 0) {
         pldmgr_log("[Autoload] Launching startup payloads (background)...\n");
         run_sequence_file(STARTUP_LIST_PATH, 1);
+    }
+
+    /* A manual run may have started while startup payloads were launching. If so,
+     * do NOT fall through to the reset below — it would wipe the forced run's
+     * list/status and leave an "empty" load screen. */
+    if (forced_run) {
+        pldmgr_log("[Autoload] Manual run started during startup - yielding.\n");
+        return NULL;
     }
 
     /* Phase 2: no active profile -> the picker (already flagged) or dashboard. */
@@ -443,7 +461,8 @@ int pldmgr_autoload_run_profile(const char *id) {
         return -1;
     }
 
-    pldmgr_log("[Autoload] Manual run requested: %s\n", arr[idx].name);
+    pldmgr_log("[Autoload] Manual run requested: %s | sequence: %s\n",
+               arr[idx].name, arr[idx].list[0] ? arr[idx].list : "(EMPTY)");
     profiles_write_sequence(arr[idx].list);
     free(arr);
 

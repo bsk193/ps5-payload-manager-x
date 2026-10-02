@@ -71,7 +71,10 @@
 #define ROUTE_PROCESS_KILL "/process_kill"
 #define ROUTE_HISTORY_LIST "/history_list"
 
-#define MENU_VERSION "0.5.1.8x"
+/* Upstream's version. The fork NEVER edits this line, so merging upstream never
+ * conflicts here. The fork's own version lives in include/version_x.h
+ * (PLDMGRX_VERSION), set from git tags; MENU_VERSION is shown as "based on vX". */
+#define MENU_VERSION "0.5.2"
 /* autoload.txt is the persistent "startup payloads" list (always run on boot,
  * pldmgr-style, toggled per-payload in Manage Payloads). The active/selected
  * profile sequence is resolved into a separate scratch file. */

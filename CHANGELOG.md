@@ -6,6 +6,19 @@
 ### 🛠️ Backend & API Updates
 * Profiles are stored in `profiles.json` and managed via new `/profiles_get`, `/profiles_set`, and `/profile_run` endpoints. `/autoload_status` now reports a `picker` flag. `autoload.txt` becomes an internal scratch file resolved from the active/selected profile.
 
+## v0.5.2 (upstream)
+- Rebuilt with latest SDK
+
+## v0.5.1 (upstream)
+
+### 🚀 Features & UX Improvements
+* **Translations**: Updated localization files across supported languages.
+* **New Languages**:
+  * **Arabic** (thanks to mohamad.z.k28, abdoulacadat, DumDum143, HoussamLovy, c0ncerta, sgs2ofameer)
+  * **Thai** (thanks to Modmycon, hpokemon776)
+
+**Full Changelog**: [v0.5.0...v0.5.1](https://github.com/itsPLK/ps5-payload-manager/compare/v0.5.0...v0.5.1)
+
 ## v0.5.0
 
 ### 🚀 Features & UX Improvements

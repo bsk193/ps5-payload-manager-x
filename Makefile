@@ -43,6 +43,15 @@ ICON_PNG_HEADER := include/assets_icon_png.h
 CFLAGS := -Os -Wall -ffunction-sections -fdata-sections $(INCLUDES)
 LDFLAGS := -Wl,--gc-sections
 
+# Fork (Payload Manager X) version — our own semver, independent of upstream's
+# MENU_VERSION. Comes from git tags via tools/fork_version.sh (git describe of
+# x-v* tags; 0.0.0-dev when untagged). Override with `make X_VERSION=1.2.3`
+# (the release workflow passes the exact tagged version).
+X_VERSION ?= $(shell bash tools/fork_version.sh dev 2>/dev/null)
+ifneq ($(X_VERSION),)
+CFLAGS += -DPLDMGRX_VERSION=\"$(X_VERSION)\"
+endif
+
 # "Payload Manager X" build: `make ... PLDMGRX=1 [PLDMGRX_PORT=8084|8184]`.
 # Always uses the X identity (name "Payload Manager X", app id PLDMGRX01,
 # /data/pldmgrx) — the only thing that varies is the HTTP port:
@@ -69,11 +78,12 @@ frontend-build:
 	@echo "Building frontend..."
 	git submodule update --init --recursive
 	cd frontend && npm install && npm run build
-	@VERSION=$$(grep '#define MENU_VERSION' include/pldmgr.h | awk '{print $$3}' | tr -d '"'); \
+	@XVER="$(X_VERSION)"; [ -n "$$XVER" ] || XVER=$$(bash tools/fork_version.sh dev 2>/dev/null); \
+	UPVER=$$(grep '#define MENU_VERSION' include/pldmgr.h | awk '{print $$3}' | tr -d '"'); \
 	COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
 	git diff --quiet || COMMIT="DEV"; \
 	DATE=$$(date -u +"%Y-%m-%d %H:%M:%S UTC"); \
-	TITLE="Payload Manager X v$$VERSION by PLK and bsk193 ($$COMMIT, built at $$DATE)"; \
+	TITLE="PS5 Payload Manager X v$$XVER (based on v$$UPVER) by PLK and bsk193 ($$COMMIT, built at $$DATE)"; \
 	echo "Updating title in index.html to: $$TITLE"; \
 	TMP=$$(mktemp "$${TMPDIR:-/tmp}/pldmgr.XXXXXX"); \
 	sed "s|\[\[TITLE_PLACEHOLDER\]\]|$$TITLE|g" frontend/dist/index.html > $$TMP; \

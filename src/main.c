@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "pldmgr.h"
+#include "version_x.h"
 #include "config.h"
 #include "http_server.h"
 #include "repository.h"
@@ -76,16 +77,24 @@ static pid_t find_pid(const char *name) {
 extern int sceNetCtlInit();
 extern int sceUserServiceInitialize(void *);
 
-__attribute__((used)) volatile const char pldmgr_version_sig[] = "PLDMGR_VER:" MENU_VERSION;
+/* Embedded version marker read by the self-update scanner. The X build uses a
+ * DISTINCT marker ("PLDMGRX_VER:") and the FORK version (PLDMGRX_VERSION) so
+ * self-update only ever matches other X builds — never stock pldmgr, which
+ * carries "PLDMGR_VER:" and upstream's version. */
+#ifdef PLDMGRX
+__attribute__((used)) volatile const char pldmgr_version_sig[] = PLDMGR_SELF_MARKER PLDMGRX_VERSION;
+#else
+__attribute__((used)) volatile const char pldmgr_version_sig[] = PLDMGR_SELF_MARKER MENU_VERSION;
+#endif
 
 int main(int argc, char *argv[]) {
     struct MHD_Daemon *daemon;
     unsigned short port = DEFAULT_PORT;
     pid_t pid;
 
-    syscall(SYS_thr_set_name, -1, "pldmgr.elf");
+    syscall(SYS_thr_set_name, -1, PLDMGR_PROC_NAME);
 
-    while ((pid = find_pid("pldmgr.elf")) > 0) {
+    while ((pid = find_pid(PLDMGR_PROC_NAME)) > 0) {
         if (kill(pid, SIGKILL)) {
             pldmgr_log("[PLDMGR] kill failed\n");
             return EXIT_FAILURE;
@@ -157,10 +166,11 @@ int main(int argc, char *argv[]) {
 
     if (!cfg.auto_browser_open) {
         if (strcmp(current_ip, "unknown") != 0) {
-            pldmgr_notify(PLDMGR_APP_NAME " v%s\nIP: %s\nPort: %d", MENU_VERSION,
-                          current_ip, port);
+            pldmgr_notify(PLDMGR_APP_NAME " v%s (based on v%s)\nIP: %s\nPort: %d",
+                          PLDMGRX_VERSION, PLDMGRX_UPSTREAM_VERSION, current_ip, port);
         } else {
-            pldmgr_notify(PLDMGR_APP_NAME " v%s\nWaiting for Network...", MENU_VERSION);
+            pldmgr_notify(PLDMGR_APP_NAME " v%s (based on v%s)\nWaiting for Network...",
+                          PLDMGRX_VERSION, PLDMGRX_UPSTREAM_VERSION);
         }
     }
 

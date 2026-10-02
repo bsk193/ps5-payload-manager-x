@@ -14,6 +14,7 @@
 
 #include "http_server.h"
 #include "pldmgr.h"
+#include "version_x.h"
 #include "log_server.h"
 #include "config.h"
 #include "payload_mgr.h"
@@ -964,7 +965,8 @@ enum MHD_Result http_on_request(void *cls, struct MHD_Connection *conn,
         }
     } else if (strcmp(url, ROUTE_VERSION) == 0) {
         resp = MHD_create_response_from_buffer(
-            strlen(MENU_VERSION), (void *)MENU_VERSION, MHD_RESPMEM_PERSISTENT);
+            strlen(PLDMGR_VERSION_DISPLAY), (void *)PLDMGR_VERSION_DISPLAY,
+            MHD_RESPMEM_PERSISTENT);
         MHD_add_response_header(resp, "Content-Type", "text/plain");
     } else if (strcmp(url, ROUTE_SYSTEM_INFO) == 0) {
         char fw[32] = "";

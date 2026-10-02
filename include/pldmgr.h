@@ -21,11 +21,19 @@
    * created. PLDM00002 keeps the proven prefix but a distinct number. */
   #define PLDMGR_TITLE_ID  "PLDM00002"
   #define PLDMGR_APP_NAME  "Payload Manager X"
+  /* Distinct from stock so the two never mistake each other for "self": the X
+   * build embeds/scans a "PLDMGRX_VER:" signature (stock uses "PLDMGR_VER:") and
+   * names its thread "pldmgrx.elf" (stock uses "pldmgr.elf"), so self-update
+   * won't launch stock pldmgr and the two won't SIGKILL each other. */
+  #define PLDMGR_SELF_MARKER "PLDMGRX_VER:"
+  #define PLDMGR_PROC_NAME   "pldmgrx.elf"
 #else
   #define MENU_PORT        8084
   #define PLDMGR_DATA_ROOT "/data/pldmgr"
   #define PLDMGR_TITLE_ID  "PLDM00001"
   #define PLDMGR_APP_NAME  "Payload Manager"
+  #define PLDMGR_SELF_MARKER "PLDMGR_VER:"
+  #define PLDMGR_PROC_NAME   "pldmgr.elf"
 #endif
 
 /* Network Settings */

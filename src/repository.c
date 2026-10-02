@@ -15,6 +15,7 @@
 #include "json_helpers.h"
 #include "config.h"
 #include "pldmgr.h"
+#include "version_x.h"
 #include "payload_mgr.h"
 #include "assets_cacert_pem.h"
 
@@ -712,10 +713,11 @@ int get_elf_pldmgr_version(const char *path, char *out_version, size_t out_size)
     FILE *f = fopen(path, "rb");
     if (!f) return -1;
 
-    char sig[16];
-    sig[0] = 'P'; sig[1] = 'L'; sig[2] = 'D'; sig[3] = 'M'; sig[4] = 'G';
-    sig[5] = 'R'; sig[6] = '_'; sig[7] = 'V'; sig[8] = 'E'; sig[9] = 'R'; sig[10] = ':'; sig[11] = '\0';
-    size_t sig_len = 11;
+    /* Match this build's OWN marker: "PLDMGRX_VER:" for the X build, "PLDMGR_VER:"
+     * for stock. An X build therefore never recognises a stock pldmgr ELF as a
+     * self-update candidate (stock's "PLDMGR_VER:" diverges at the 'X'). */
+    const char *sig = PLDMGR_SELF_MARKER;
+    size_t sig_len = strlen(sig);
 
     char buffer[8192];
     size_t bytes_read;
@@ -807,9 +809,18 @@ static int compare_versions(const char *v1, const char *v2) {
  * a renamed X build installed from the Cloud Hub is never detected as an update. */
 static int is_manager_name(const char *name) {
     if (!name) return 0;
+#ifdef PLDMGRX
+    /* X build: only recognise OUR OWN naming, so self-update never even descends
+     * into a stock pldmgr folder. (The marker check in get_elf_pldmgr_version is
+     * the real guard; this is defence-in-depth.) */
+    if (strcasestr(name, "pldmgrx")) return 1;
+    if (strcasestr(name, "payload") && strcasestr(name, "manager") && strcasestr(name, "x")) return 1;
+    return 0;
+#else
     if (strcasestr(name, "pldmgr")) return 1;
     if (strcasestr(name, "payload") && strcasestr(name, "manager")) return 1;
     return 0;
+#endif
 }
 
 int repository_check_self_update(char *out_path, size_t out_size) {
@@ -848,7 +859,7 @@ int repository_check_self_update(char *out_path, size_t out_size) {
                                         char version[64];
                                         if (get_elf_pldmgr_version(full_path, version, sizeof(version)) == 0) {
                                             pldmgr_log("[PLDMGR] Found potential update: %s (v%s)\n", full_path, version);
-                                            if (compare_versions(version, MENU_VERSION) > 0) {
+                                            if (compare_versions(version, PLDMGR_RUNNING_VERSION) > 0) {
                                                 strncpy(out_path, full_path, out_size);
                                                 closedir(sdir);
                                                 closedir(dir);
